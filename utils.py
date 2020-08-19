@@ -85,7 +85,7 @@ def load_dicom(imgFolder):
 
     return patientID, date, seriesDict
 
-def resample_label(label, thickness, spacing, new_spacing=[1, 1, 1]):
+def resample_pos(label, thickness, spacing, new_spacing=[1, 1, 1]):
     spacing = map(float, ([thickness] + list(spacing)))
     spacing = np.array(list(spacing))
     resize_factor = spacing / new_spacing
@@ -125,7 +125,7 @@ def plot_bbox(images, label, show=True):
     rect = patches.Rectangle((x - d / 2, y - d / 2), d, d, linewidth=1, edgecolor='r', facecolor='none')
     ax.add_patch(rect)
     if show:
-        plt.imshow()
+        plt.show()
     else:
         plt.savefig()
 
@@ -137,7 +137,8 @@ def extract_cube(images, label, size):
     :param size: size of the cube
     :return: cube centered at nodule's position, shape (num_slices, h, w)
     '''
-    x, y, z = label[:3].astype(np.int)
+    images = np.pad(images, ((size, size), (size, size), (size, size)), 'constant', constant_values=0)
+    x, y, z = label[:3].astype(np.int) + size
     d = label[-1]
     if size < d:
         print("This nodule is not totally covered in the cube!")

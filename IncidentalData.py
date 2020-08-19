@@ -1,7 +1,7 @@
 from collections import defaultdict
 from natsort import natsorted
 from tqdm import tqdm
-from utils import check_fileType, read_slices, load_dicom, extract_cube, resample_image, resample_label
+from utils import check_fileType, read_slices, load_dicom, extract_cube, resample_image, resample_pos
 
 from sklearn.cluster import KMeans
 from skimage import morphology
@@ -17,11 +17,15 @@ import os
 
 
 class LungDataset(object):
-    def __init__(self, rootFolder, labeled_only=False, gt_label_file=None, reload=False):
+    def __init__(self, rootFolder, labeled_only=False, pos_label_file=None, cat_label_file=None, reload=False):
         self.imageInfo = []
         self._imageIds = []
-        if gt_label_file:
-            self.label_df = pd.read_csv(os.path.join(gt_label_file), dtype={"date": str})
+        if pos_label_file:
+            self.pos_df = pd.read_csv(pos_label_file, dtype={"date": str})
+        if cat_label_file:
+            self.cat_df = pd.read_excel(cat_label_file, dtype={"MRN": str})
+            cat_key = [i for i in self.cat_df.columns if i.startswith("Category Of")][0]
+            self.cats = self.cat_df[cat_key]
         self.matches = ["LUNG", "lung"]
         self.load_lung(rootFolder, labeled_only, reload)
         self.prepare()
@@ -75,11 +79,11 @@ class LungDataset(object):
                     continue
                 # find series of only labeled data
                 if labeled_only:
-                    existId = (self.label_df["patient"] == pstr) & (self.label_df["date"] == dstr)
+                    existId = (self.pos_df["patient"] == pstr) & (self.pos_df["date"] == dstr)
                     if existId.sum() == 0:
                         continue
                     else:
-                        series = self.label_df[existId]["series"].to_numpy()[0]
+                        series = self.pos_df[existId]["series"].to_numpy()[0]
                         if series == "Lung_Bone+ 50cm":
                             series = series.replace("_", "/")
                         print("\n>>>>>>> Start to load {:s} at date {:s}".format(pstr, dstr))
@@ -161,16 +165,25 @@ class LungDataset(object):
 
         return images
 
-    def load_label(self, imageId):
+    def load_pos(self, imageId):
         imgInfo = self.imageInfo[imageId]
         thickness, spacing = imgInfo["sliceThickness"], imgInfo["pixelSpacing"]
         pstr = imgInfo["pstr"]
         dstr = imgInfo["date"]
-        existId = (self.label_df["patient"] == pstr) & (self.label_df["date"] == dstr)
-        label = self.label_df[existId][["x", "y", "z", "d"]].iloc[0].values
-        label, new_spacing = resample_label(label, thickness, spacing)
+        existId = (self.pos_df["patient"] == pstr) & (self.pos_df["date"] == dstr)
+        pos = self.pos_df[existId][["x", "y", "z", "d"]].iloc[0].values
+        pos, new_spacing = resample_pos(pos, thickness, spacing)
 
-        return label
+        return pos
+
+    def load_cat(self, imageId):
+        imgInfo = self.imageInfo[imageId]
+        patientID = imgInfo["patientID"]
+        existId = (self.cat_df["MRN"].str.zfill(9) == patientID)
+        cat = self.cats[existId].iloc[0]
+        cat = int(cat > 2)
+
+        return cat
 
     def get_cube(self, imageId, size):
         imgInfo = self.imageInfo[imageId]
@@ -179,9 +192,9 @@ class LungDataset(object):
             cube = np.load(cubePath, allow_pickle=True)["image"]
         except FileNotFoundError:
             images = self.load_image(imageId)
-            label = self.load_label(imageId)
+            pos = self.load_pos(imageId)
             cubePath = imgInfo["imagePath"].replace(".npz", "_cube{:d}.npz".format(size))
-            cube = extract_cube(images, label, size=size)
+            cube = extract_cube(images, pos, size=size)
             np.savez_compressed(cubePath, image=cube, info=imgInfo)
             print("Save scan cube to {:s}".format(cubePath))
 
@@ -190,20 +203,29 @@ class LungDataset(object):
 
 if __name__ == '__main__':
     # rootFolder = "/Users/yuan_pengyu/Downloads/IncidentalLungCTs_sample/"
-    rootFolder = "I:\Lung_ai\Data"
-    gt_label_file = "I:\Lung_ai\gt_labels.csv"
-    lungData = LungDataset(rootFolder, labeled_only=True, gt_label_file=gt_label_file, reload=True)
+    rootFolder = "data/"
+    pos_label_file = "data/pos_labels.csv"
+    cat_label_file = "data/Lung Nodule Clinical Data_Min Kim (No name).xlsx"
+    lungData = LungDataset(rootFolder, labeled_only=True, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
+                           reload=False)
+
+    for i in range(len(lungData.imageInfo)):
+        s = lungData.imageInfo[i]["imagePath"]
+        lungData.imageInfo[i]["imagePath"] = s.replace("\\", "/").replace("I:/Lung_ai/Data/", "data/")
+
+    print()
     # image, new_image = lungData.load_image(0)
     # img = new_image[100]
     # make_lungmask(img, display=True)
 
-    # from utils import plot_bbox, center_stack
-    # crop_size = 64
+    from utils import plot_bbox, center_stack
+    crop_size = 64
     # for id in tqdm(lungData.imageIds):
-    #     cube = lungData.get_cube(id, crop_size)
-    #     label = lungData.load_label(id)
-    #     plot_bbox(cube, np.array([32, 32, 32, label[-1]]))
-    #     center_stack(cube, label[-1])
+    for id in range(3):
+        cube = lungData.get_cube(id, crop_size)
+        pos = lungData.load_pos(id)
+        plot_bbox(cube, np.array([32, 32, 32, pos[-1]]))
+        center_stack(cube, pos[-1])
 
 
     # saveFolder = "./data/"
