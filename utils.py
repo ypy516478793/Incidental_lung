@@ -96,7 +96,7 @@ def resample_pos(label, thickness, spacing, new_spacing=[1, 1, 1]):
     label[:3] = np.round(label[:3] * resize_factor)
     label[3] = label[3] * resize_factor[1]
 
-    return label, new_spacing
+    return label
 
 def resample_image(image, thickness, spacing, new_spacing=[1, 1, 1]):
     # Determine current pixel spacing
@@ -111,11 +111,12 @@ def resample_image(image, thickness, spacing, new_spacing=[1, 1, 1]):
 
     return image, new_spacing
 
-def plot_bbox(images, label, show=True):
+def plot_bbox(images, label, savedir, show=True):
     '''
     plot center image with bbox
     :param images: CT scan, shape: (num_slices, h, w) or (h, w)
     :param label: coordinates & diameter (all in pixel space): (x, y, z, d) or (x, y, d)
+    :param savedir: save directory
     :return: None
     '''
     fig, ax = plt.subplots(1)
@@ -130,7 +131,8 @@ def plot_bbox(images, label, show=True):
     if show:
         plt.show()
     else:
-        plt.savefig()
+        plt.savefig(savedir + "_bbox.png")
+        plt.close()
 
 def extract_cube(images, label, size):
     '''
@@ -140,7 +142,7 @@ def extract_cube(images, label, size):
     :param size: size of the cube
     :return: cube centered at nodule's position, shape (num_slices, h, w)
     '''
-    images = np.pad(images, ((size, size), (size, size), (size, size)), 'constant', constant_values=0)
+    images = np.pad(images, ((size, size), (size, size), (size, size)), "constant", constant_values=0)
     x, y, z = label[:3].astype(np.int) + size
     d = label[-1]
     if size < d:
@@ -150,11 +152,12 @@ def extract_cube(images, label, size):
                   x - size // 2 : x + (size + 1) // 2]
     return cube
 
-def center_stack(stack, d, rows=5, cols=6, show_every=2, patchType="Circle"):
+def center_stack(stack, d, savedir, rows=5, cols=6, show_every=2, patchType="Circle", show=True):
     '''
     Sample slices from CT scan and show
     :param stack: slices of CT scan
     :param d: diameter of the nodule
+    :param savedir: save directory
     :param rows: rows
     :param cols: cols
     :param show_every: show interval
@@ -176,7 +179,11 @@ def center_stack(stack, d, rows=5, cols=6, show_every=2, patchType="Circle"):
             rect = patches.Rectangle((x - d / 2, y - d / 2), d, d, linewidth=1, edgecolor='r', facecolor='none')
         ax[int(i/cols),int(i % cols)].add_patch(rect)
         ax[int(i/cols),int(i % cols)].axis('off')
-    plt.show()
+    if show:
+        plt.show()
+    else:
+        plt.savefig(savedir + "_stack.png")
+        plt.close()
 
 def lumTrans(img):
     lungwin = np.array([-1200.,600.])

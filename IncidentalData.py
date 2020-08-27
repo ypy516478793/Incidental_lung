@@ -20,7 +20,7 @@ import os
 
 class LungDataset(Dataset):
     def __init__(self, rootFolder, labeled_only=False, pos_label_file=None, cat_label_file=None, cube_size=64,
-                 reload=False, train=True):
+                 reload=False, train=True, screen=True):
         self.imageInfo = []
         self._imageIds = []
         self.cube_size = cube_size
@@ -35,6 +35,8 @@ class LungDataset(Dataset):
         self.imageInfo = self.imageInfo[:3]
         self.load_subset(train)
         self.prepare()
+        if screen:
+            self.screen()
 
     def __len__(self):
         return len(self.imageIds)
@@ -44,7 +46,7 @@ class LungDataset(Dataset):
             imageId = imageId.tolist()
 
         feature = self.get_cube(imageId, self.cube_size)
-        feature = feature[np.newaxis, ...]
+        # feature = feature[np.newaxis, ...]
         label = self.load_cat(imageId)
 
         sample = {"features": feature,
@@ -175,6 +177,12 @@ class LungDataset(Dataset):
     def imageIds(self):
         return self._imageIds
 
+    def screen(self):
+        for i, imageId in enumerate(self._imageIds):
+            pos = self.load_pos(imageId)
+            if len(pos) > 1:
+                self._imageIds = np.delete(self._imageIds, i)
+
 
     def load_image(self, imageId):
         imgInfo = self.imageInfo[imageId]
@@ -197,8 +205,8 @@ class LungDataset(Dataset):
         pstr = imgInfo["pstr"]
         dstr = imgInfo["date"]
         existId = (self.pos_df["patient"] == pstr) & (self.pos_df["date"] == dstr)
-        pos = self.pos_df[existId][["x", "y", "z", "d"]].iloc[0].values
-        pos, new_spacing = resample_pos(pos, thickness, spacing)
+        pos = self.pos_df[existId][["x", "y", "z", "d"]].values
+        pos = np.array([resample_pos(p, thickness, spacing) for p in pos])
 
         return pos
 
@@ -213,18 +221,21 @@ class LungDataset(Dataset):
 
     def get_cube(self, imageId, size):
         imgInfo = self.imageInfo[imageId]
-        cubePath = imgInfo["imagePath"].replace(".npz", "_cube{:d}.npz".format(size))
-        try:
-            cube = np.load(cubePath, allow_pickle=True)["image"]
-        except FileNotFoundError:
-            images = self.load_image(imageId)
-            pos = self.load_pos(imageId)
-            cubePath = imgInfo["imagePath"].replace(".npz", "_cube{:d}.npz".format(size))
-            cube = extract_cube(images, pos, size=size)
-            np.savez_compressed(cubePath, image=cube, info=imgInfo)
-            print("Save scan cube to {:s}".format(cubePath))
+        pos = self.load_pos(imageId)
+        cubes = []
+        for i,p in enumerate(pos):
+            cubePath = imgInfo["imagePath"].replace(".npz", "_cube{:d}_{:d}.npz".format(size, i))
+            try:
+                cube = np.load(cubePath, allow_pickle=True)["image"]
+            except FileNotFoundError:
+                images = self.load_image(imageId)
+                cube = extract_cube(images, p, size=size)
+                np.savez_compressed(cubePath, image=cube, info=imgInfo, pos=p)
+                print("Save scan cube to {:s}".format(cubePath))
+            cubes.append(cube)
+        cubes = np.array(cubes)
 
-        return cube
+        return cubes
 
 
 if __name__ == '__main__':
@@ -245,14 +256,10 @@ if __name__ == '__main__':
     # img = new_image[100]
     # make_lungmask(img, display=True)
 
-    from utils import plot_bbox, center_stack
+    from prepare import show_nodules
     crop_size = 64
-    # for id in tqdm(lungData.imageIds):
-    for id in range(3):
-        cube = lungData.get_cube(id, crop_size)
-        pos = lungData.load_pos(id)
-        plot_bbox(cube, np.array([32, 32, 32, pos[-1]]))
-        center_stack(cube, pos[-1])
+    show_nodules(lungData, crop_size)
+
 
 
     # saveFolder = "./data/"

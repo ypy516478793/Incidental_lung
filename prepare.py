@@ -1,4 +1,5 @@
 from shutil import copyfile
+from tqdm import tqdm
 import pandas as pd
 import numpy as np
 import os
@@ -43,6 +44,34 @@ def organize_npz(folder):
             npz_file = os.path.join(patient_folder, npz)
             dst_file = os.path.join(dst_folder, "{:s}-{:s}".format(pstr, npz))
             copyfile(npz_file, dst_file)
+
+def organize_img(folder):
+    data_folder = os.path.join(folder, "Data")
+    dst_folder = os.path.join(folder, "Images")
+    os.makedirs(dst_folder, exist_ok=True)
+    all_patients = [o for o in os.listdir(data_folder) if os.path.isdir(os.path.join(data_folder,o))]
+    for patient in tqdm(all_patients):
+        patient_folder = os.path.join(data_folder, patient)
+        if "Image" in os.listdir(patient_folder):
+            img_folder = os.path.join(patient_folder, "Image")
+            for img in os.listdir(img_folder):
+                img_file = os.path.join(img_folder, img)
+                dst_file = os.path.join(dst_folder, img)
+                copyfile(img_file, dst_file)
+
+def show_nodules(lungData, crop_size=64):
+    from utils import plot_bbox, center_stack
+    center = crop_size // 2
+    for id in tqdm(lungData.imageIds):
+        cubes = lungData.get_cube(id, crop_size)
+        pos = lungData.load_pos(id)
+        info = lungData.imageInfo[id]
+        imgdir, imgbase = os.path.split(info["imagePath"])
+        savedir = os.path.join(imgdir, "Image", imgbase.rstrip(".npz"))
+        os.makedirs(os.path.dirname(savedir), exist_ok=True)
+        for cube, p in zip(cubes, pos):
+            plot_bbox(cube, np.array([center, center, center, p[-1]]), savedir, show=False)
+            center_stack(cube, p[-1], savedir, show=False)
 
 def create_gt_csv(folder, annot_file):
     '''
