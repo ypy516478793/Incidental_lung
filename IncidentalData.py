@@ -1,25 +1,29 @@
 from collections import defaultdict
 from natsort import natsorted
 from tqdm import tqdm
-from utils import check_fileType, read_slices, load_dicom, extract_cube, resample_image, resample_pos
-
+from utils import check_fileType, read_slices, load_dicom, extract_cube, resample_image, resample_pos, make_lungmask, lumTrans
+from torch.utils.data import Dataset
 from sklearn.cluster import KMeans
 from skimage import morphology
 from skimage import measure
 from skimage.transform import resize
+from sklearn.model_selection import train_test_split
 
 import matplotlib.pyplot as plt
 import pydicom as dicom
 import pandas as pd
 import numpy as np
+import torch
 
 import os
 
 
-class LungDataset(object):
-    def __init__(self, rootFolder, labeled_only=False, pos_label_file=None, cat_label_file=None, reload=False):
+class LungDataset(Dataset):
+    def __init__(self, rootFolder, labeled_only=False, pos_label_file=None, cat_label_file=None, cube_size=64,
+                 reload=False, train=True):
         self.imageInfo = []
         self._imageIds = []
+        self.cube_size = cube_size
         if pos_label_file:
             self.pos_df = pd.read_csv(pos_label_file, dtype={"date": str})
         if cat_label_file:
@@ -28,7 +32,25 @@ class LungDataset(object):
             self.cats = self.cat_df[cat_key]
         self.matches = ["LUNG", "lung"]
         self.load_lung(rootFolder, labeled_only, reload)
+        self.imageInfo = self.imageInfo[:3]
+        self.load_subset(train)
         self.prepare()
+
+    def __len__(self):
+        return len(self.imageIds)
+
+    def __getitem__(self, imageId):
+        if torch.is_tensor(imageId):
+            imageId = imageId.tolist()
+
+        feature = self.get_cube(imageId, self.cube_size)
+        feature = feature[np.newaxis, ...]
+        label = self.load_cat(imageId)
+
+        sample = {"features": feature,
+                  "label": label}
+
+        return sample
 
     def add_scan(self, pstr, patientID, date, series, imgPath, sliceThickness, pixelSpacing, scanID, **kwargs):
         '''
@@ -64,7 +86,6 @@ class LungDataset(object):
 
         # Loop over all patients
         for i in range(len(all_patients)):
-        # for i in range(5):
             patientFolder = os.path.join(rootFolder, all_patients[i])
             all_dates = [d for d in os.listdir(patientFolder) if
                         os.path.isdir(os.path.join(patientFolder, d)) and d[-4:] == "data"]
@@ -126,10 +147,6 @@ class LungDataset(object):
                 np.savez_compressed(CTinfoPath, info=self.imageInfo)
                 print("Save all scan infos to {:s}".format(CTinfoPath))
 
-        # CTinfoPath = os.path.join(rootFolder, "CTinfo.npz")
-        # np.savez_compressed(CTinfoPath, info=self.imageInfo)
-        # print("Save all scan infos to {:s}".format(CTinfoPath))
-
         print("-" * 30 + " CTinfo " + "-" * 30)
         [print(i) for i in self.imageInfo]
 
@@ -142,7 +159,10 @@ class LungDataset(object):
                 self.imageInfo = np.load(os.path.join(rootFolder, "CTinfo.npz"), allow_pickle=True)["info"]
             except FileNotFoundError:
                 self.load_from_dicom(rootFolder, labeled_only=labeled_only)
-        # self.load_from_dicom(rootFolder)
+
+    def load_subset(self, train):
+        trainInfo, valInfo = train_test_split(self.imageInfo, random_state=42)
+        self.imageInfo = trainInfo if train else valInfo
 
     def prepare(self):
         self.num_images = len(self.imageInfo)
@@ -160,6 +180,12 @@ class LungDataset(object):
         imgInfo = self.imageInfo[imageId]
         imgPath, thickness, spacing = imgInfo["imagePath"], imgInfo["sliceThickness"], imgInfo["pixelSpacing"]
         images = np.load(imgPath)["image"]
+        images = lumTrans(images)
+        # if mask:
+        #     masked_images = []
+        #     for img in images:
+        #         masked_images.append(make_lungmask(img))
+        #     masked_images = np.stack(masked_images)
         # plt.imshow(images[10])
         print("Images{:d} shape: ".format(imageId), images.shape)
 
@@ -206,12 +232,13 @@ if __name__ == '__main__':
     rootFolder = "data/"
     pos_label_file = "data/pos_labels.csv"
     cat_label_file = "data/Lung Nodule Clinical Data_Min Kim (No name).xlsx"
+    cube_size = 64
     lungData = LungDataset(rootFolder, labeled_only=True, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
-                           reload=False)
+                           cube_size=cube_size, reload=False)
 
-    for i in range(len(lungData.imageInfo)):
-        s = lungData.imageInfo[i]["imagePath"]
-        lungData.imageInfo[i]["imagePath"] = s.replace("\\", "/").replace("I:/Lung_ai/Data/", "data/")
+    # for i in range(len(lungData.imageInfo)):
+    #     s = lungData.imageInfo[i]["imagePath"]
+    #     lungData.imageInfo[i]["imagePath"] = s.replace("\\", "/").replace("I:/Lung_ai/Data/", "../data/")
 
     print()
     # image, new_image = lungData.load_image(0)
