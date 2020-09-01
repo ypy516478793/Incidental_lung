@@ -99,9 +99,30 @@ def create_gt_csv(folder, annot_file):
     label_df = pd.DataFrame(labels, columns=columns)
     label_df.to_csv(os.path.join(folder, "gt_labels.csv"), index=False)
 
+def move_back_npz(root_folder):
+    npz_folder = os.path.join(root_folder, "processed_data")
+    imageInfos = np.load(os.path.join(root_folder, "CTinfo.npz"), allow_pickle=True)["info"]
+    imagePaths = [d["imagePath"] for d in imageInfos]
+    start_id = imagePaths[0].find("Lung")
+    imagePaths = [os.path.join(root_folder, p[start_id:].split("/")[0]) for p in imagePaths]
+    for p in imagePaths:
+        os.makedirs(p, exist_ok=True)
+    files = os.listdir(npz_folder)
+    for f in files:
+        fstr = f.split("-")[0]
+        for p in imagePaths:
+            pstr = p.split("-")[0].split("_")[1]
+            if fstr == pstr:
+                dst_folder = p
+                npz_file = os.path.join(npz_folder, f)
+                dst_file = os.path.join(dst_folder, f.split("-", 1)[1])
+                copyfile(npz_file, dst_file)
+                continue
+
 
 if __name__ == '__main__':
-    root_folder = "I:\Lung_ai"
+    # root_folder = "I:\Lung_ai"
+    root_folder = "data/"
 
     # Kim_report = "Lung Nodule Clinical Data_Min Kim (Autosaved).xlsx"
     # organize_screenshots(root_folder, Kim_report)
@@ -112,4 +133,5 @@ if __name__ == '__main__':
     # gt_label = "gt_labels.csv"
     # extract_cube(root_folder, gt_label)
 
-    organize_npz(root_folder)
+    # organize_npz(root_folder)
+    move_back_npz(root_folder)

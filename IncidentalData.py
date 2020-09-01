@@ -32,11 +32,11 @@ class LungDataset(Dataset):
             self.cats = self.cat_df[cat_key]
         self.matches = ["LUNG", "lung"]
         self.load_lung(rootFolder, labeled_only, reload)
-        self.imageInfo = self.imageInfo[:3]
-        self.load_subset(train)
-        self.prepare()
+        # self.imageInfo = self.imageInfo[:3]
         if screen:
             self.screen()
+        self.load_subset(train)
+        self.prepare()
 
     def __len__(self):
         return len(self.imageIds)
@@ -164,6 +164,7 @@ class LungDataset(Dataset):
 
     def load_subset(self, train):
         trainInfo, valInfo = train_test_split(self.imageInfo, random_state=42)
+        # trainInfo, valInfo = train_test_split(self.imageInfo)
         self.imageInfo = trainInfo if train else valInfo
 
     def prepare(self):
@@ -178,10 +179,13 @@ class LungDataset(Dataset):
         return self._imageIds
 
     def screen(self):
-        for i, imageId in enumerate(self._imageIds):
+        num_images = len(self.imageInfo)
+        mask = np.ones(num_images, dtype=bool)
+        for imageId in range(num_images):
             pos = self.load_pos(imageId)
             if len(pos) > 1:
-                self._imageIds = np.delete(self._imageIds, i)
+                mask[imageId] = False
+        self.imageInfo = self.imageInfo[mask]
 
 
     def load_image(self, imageId):
