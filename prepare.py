@@ -1,5 +1,7 @@
 from shutil import copyfile
 from tqdm import tqdm
+from natsort import natsorted
+from collections import Counter
 import pandas as pd
 import numpy as np
 import os
@@ -59,15 +61,19 @@ def organize_img(folder):
                 dst_file = os.path.join(dst_folder, img)
                 copyfile(img_file, dst_file)
 
-def show_nodules(lungData, crop_size=64):
+def show_nodules(lungData, crop_size=64, train=True):
     from utils import plot_bbox, center_stack
     center = crop_size // 2
+    trainStr = "train" if train else "test"
     for id in tqdm(lungData.imageIds):
         cubes = lungData.get_cube(id, crop_size)
         pos = lungData.load_pos(id)
         info = lungData.imageInfo[id]
         imgdir, imgbase = os.path.split(info["imagePath"])
-        savedir = os.path.join(imgdir, "Image", imgbase.rstrip(".npz"))
+        cat = lungData.load_cat(id)
+        savedir = imgdir.replace("Data", "Images/{:s}/{:d}".format(trainStr, cat)).split("-", 1)[0]
+        savedir = "{:s}_{:s}".format(savedir, imgbase.rstrip(".npz"))
+        # savedir = os.path.join(imgdir, "Image", imgbase.rstrip(".npz"))
         os.makedirs(os.path.dirname(savedir), exist_ok=True)
         for cube, p in zip(cubes, pos):
             plot_bbox(cube, np.array([center, center, center, p[-1]]), savedir, show=False)
@@ -119,6 +125,97 @@ def move_back_npz(root_folder):
                 copyfile(npz_file, dst_file)
                 continue
 
+def create_dataset_details(root_folder):
+    data_folder = os.path.join(root_folder, "Data")
+    xls_file = os.path.join(root_folder, "Dataset_details.xlsx")
+    df = pd.read_excel(xls_file, dtype={"MRN": str})
+    df['MRN'] = df['MRN'].apply(lambda x: '{0:0>9}'.format(x))
+    gt_df = pd.read_csv(os.path.join(root_folder, "gt_labels.csv"))
+
+    from IncidentalData import LungDataset
+    pos_label_file = "I:\Lung_ai\gt_labels.csv"
+    cat_label_file = "I:\Lung_ai\Lung Nodule Clinical Data_Min Kim (No name).xlsx"
+    cube_size = 64
+    lungData = LungDataset(data_folder, labeled_only=True, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
+                           cube_size=cube_size, reload=False, screen=True)
+    allpIDinLungDataset = [i["patientID"] for i in lungData.imageInfo]
+
+    all_patients = [o for o in os.listdir(data_folder) if os.path.isdir(os.path.join(data_folder,o))]
+    all_patients = natsorted(all_patients)
+    for i, patient in tqdm(enumerate(all_patients)):
+        patient_folder = os.path.join(data_folder, patient)
+        op_date = patient_folder.rsplit("-", 1)[1]
+        df.iloc[i, -2] = op_date
+        all_dates = [d[:8] for d in os.listdir(patient_folder) if
+                     os.path.isdir(os.path.join(patient_folder, d)) and d[-4:] == "data"]
+        all_dates = natsorted(all_dates)[::-1]
+        if len(all_dates) > 0:
+            df.iloc[i, -1] = "; ".join(all_dates)
+
+
+        pstr = patient.split("-")[0].split("_")[1]
+        # dstr = all_dates[j].split("_")[0]
+        pID = patient.split("-")[1].split("_")[0]
+        existId = (gt_df["patient"] == pstr)
+        if existId.sum() == 0:
+            continue
+
+        assert df.iloc[i, 1] == pID
+        Before_list, After_list = [], []
+        dates_in_gt = gt_df[existId]["date"].to_numpy()
+        counter = Counter(dates_in_gt)
+        for key in counter.keys():
+            if int(key) <= int(op_date):
+                Before_list.append(str({key: counter[key]}))
+            else:
+                After_list.append(str({key: counter[key]}))
+
+        df.iloc[i, 2] = 1
+        if len(Before_list) > 0: df.iloc[i, 3] = ", ".join(Before_list)
+        if len(After_list) > 0: df.iloc[i, 4] = ", ".join(After_list)
+        if pID in allpIDinLungDataset: df.iloc[i, 5] = 1
+
+
+    df.to_excel(os.path.join(root_folder, "Dataset_details_new.xlsx"), index=False)
+
+
+def find_unused_benign(root_folder):
+    data_folder = os.path.join(root_folder, "Data")
+    xls_file = os.path.join(root_folder, "Dataset_details_0916.xlsx")
+    df = pd.read_excel(xls_file, dtype={"MRN": str})
+    import ast
+
+    no_scan_in_3months = []
+    multiple_nodules = []
+
+    for i in range(len(df)):
+        sampleInfo = df.iloc[i]
+        cat = sampleInfo.iloc[6]
+        if cat <= 2:
+            continue
+
+        beforeSurgery = sampleInfo.iloc[3]
+        if beforeSurgery is np.nan:
+            continue
+        else:
+            cell = ast.literal_eval(beforeSurgery)
+
+        in_datasets = sampleInfo.iloc[5]
+        if in_datasets == 1:
+            continue
+
+        if len(cell) > 1 or list(cell.values())[0] > 1:
+            multiple_nodules.append(sampleInfo.iloc[0])
+
+        scanDates = sampleInfo.iloc[-1]
+        if scanDates is np.nan or not list(cell.keys())[0] in [int(s) for s in scanDates.split(";")]:
+            no_scan_in_3months.append({sampleInfo.iloc[0]: (list(cell.keys())[0], sampleInfo.iloc[-2])})
+
+
+    print("multi: ", multiple_nodules)
+    print("no scan: ", no_scan_in_3months)
+
+    print("")
 
 if __name__ == '__main__':
     # root_folder = "I:\Lung_ai"
@@ -134,4 +231,7 @@ if __name__ == '__main__':
     # extract_cube(root_folder, gt_label)
 
     # organize_npz(root_folder)
-    move_back_npz(root_folder)
+    # organize_img(root_folder)
+    # move_back_npz(root_folder)
+    # create_dataset_details(root_folder)
+    find_unused_benign(root_folder)

@@ -20,7 +20,7 @@ import os
 
 class LungDataset(Dataset):
     def __init__(self, rootFolder, labeled_only=False, pos_label_file=None, cat_label_file=None, cube_size=64,
-                 reload=False, train=True, screen=True):
+                 reload=False, train=None, screen=True):
         self.imageInfo = []
         self._imageIds = []
         self.cube_size = cube_size
@@ -35,7 +35,7 @@ class LungDataset(Dataset):
         # self.imageInfo = self.imageInfo[:3]
         if screen:
             self.screen()
-        self.load_subset(train)
+        if train: self.load_subset(train)
         self.prepare()
 
     def __len__(self):
@@ -107,7 +107,7 @@ class LungDataset(Dataset):
                         continue
                     else:
                         series = self.pos_df[existId]["series"].to_numpy()[0]
-                        if series == "Lung_Bone+ 50cm":
+                        if series == "Lung_Bone+ 50cm" or series == "LUNG_BONE PLUS 50cm":
                             series = series.replace("_", "/")
                         print("\n>>>>>>> Start to load {:s} at date {:s}".format(pstr, dstr))
 
@@ -161,10 +161,10 @@ class LungDataset(Dataset):
                 self.imageInfo = np.load(os.path.join(rootFolder, "CTinfo.npz"), allow_pickle=True)["info"]
             except FileNotFoundError:
                 self.load_from_dicom(rootFolder, labeled_only=labeled_only)
+        self.imageInfo = np.array(self.imageInfo)
 
     def load_subset(self, train):
         trainInfo, valInfo = train_test_split(self.imageInfo, random_state=42)
-        # trainInfo, valInfo = train_test_split(self.imageInfo)
         self.imageInfo = trainInfo if train else valInfo
 
     def prepare(self):
@@ -249,20 +249,19 @@ if __name__ == '__main__':
     cat_label_file = "data/Lung Nodule Clinical Data_Min Kim (No name).xlsx"
     cube_size = 64
     lungData = LungDataset(rootFolder, labeled_only=True, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
-                           cube_size=cube_size, reload=False)
-
-    # for i in range(len(lungData.imageInfo)):
-    #     s = lungData.imageInfo[i]["imagePath"]
-    #     lungData.imageInfo[i]["imagePath"] = s.replace("\\", "/").replace("I:/Lung_ai/Data/", "../data/")
-
-    print()
+                           cube_size=cube_size, reload=True, train=None, screen=False)
     # image, new_image = lungData.load_image(0)
     # img = new_image[100]
     # make_lungmask(img, display=True)
 
-    from prepare import show_nodules
-    crop_size = 64
-    show_nodules(lungData, crop_size)
+    # from prepare import show_nodules
+    # crop_size = 64
+    # show_nodules(lungData, crop_size)
+    #
+    # lungData_test = LungDataset(rootFolder, labeled_only=True, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
+    #                        cube_size=cube_size, reload=False, train=False)
+    # crop_size = 64
+    # show_nodules(lungData_test, crop_size, train=False)
 
 
 
