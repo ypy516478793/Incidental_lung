@@ -6,6 +6,7 @@ from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import confusion_matrix
 from torch.utils.data import DataLoader
 from IncidentalData import LungDataset
+from LUNA16Data import LUNA16
 from torchvision import transforms
 from tqdm import tqdm
 
@@ -199,13 +200,15 @@ def main():
     rootFolder = "../data/"
     pos_label_file = "../data/pos_labels.csv"
     cat_label_file = "../data/Lung Nodule Clinical Data_Min Kim (No name).xlsx"
-    cube_size = 64
-    trainData = LungDataset(rootFolder, labeled_only=True, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
-                            cube_size=cube_size, reload=False, train=True)
+    cube_size = 48
+    # trainData = LungDataset(rootFolder, labeled_only=True, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
+    #                         cube_size=cube_size, reload=False, train=True)
+    trainData = LUNA16(train=True)
     trainLoader = DataLoader(trainData, batch_size=2, shuffle=True)
 
-    valData = LungDataset(rootFolder, labeled_only=True, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
-                          cube_size=cube_size, reload=False, train=False)
+    # valData = LungDataset(rootFolder, labeled_only=True, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
+    #                       cube_size=cube_size, reload=False, train=False)
+    valData = LUNA16(train=False)
     valLoader = DataLoader(valData, batch_size=1, shuffle=False)
 
     print("Shape of train_x is: ", (len(trainData), 1,) + (cube_size,) * 3)
@@ -235,7 +238,7 @@ def main():
     extra_str = "Adam_lr0.001"
     model = generate_model(18, n_input_channels=1, n_classes=2)
     print("Use model: {:s}".format(modelName))
-    model_folder = "model/classification/"
+    model_folder = "model/classification_LUNA16/"
     model_folder += "{:s}_{:s}".format(modelName, extra_str)
     os.makedirs(model_folder, exist_ok=True)
 
