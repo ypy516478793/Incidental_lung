@@ -240,8 +240,8 @@ class LungDataset(Dataset):
             except FileNotFoundError:
                 images = self.load_image(imageId)
                 cube = extract_cube(images, p, size=size)
-                np.savez_compressed(cubePath, image=cube, info=imgInfo, pos=p)
-                print("Save scan cube to {:s}".format(cubePath))
+                # np.savez_compressed(cubePath, image=cube, info=imgInfo, pos=p)
+                # print("Save scan cube to {:s}".format(cubePath))
             cubes.append(cube)
         cubes = np.array(cubes)
 
@@ -255,7 +255,7 @@ if __name__ == '__main__':
     cat_label_file = "data/Lung Nodule Clinical Data_Min Kim (No name).xlsx"
     cube_size = 64
     lungData = LungDataset(rootFolder, labeled_only=True, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
-                           cube_size=cube_size, reload=False, train=None, screen=True)
+                           cube_size=cube_size, reload=False, train=None, screen=False)
     # image, new_image = lungData.load_image(0)
     # img = new_image[100]
     # make_lungmask(img, display=True)

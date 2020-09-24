@@ -232,7 +232,7 @@ def test(testLoader, model, device, criterion, model_folder, save_folder):
 
 def main():
 
-    Train = False
+    Train = True
     rootFolder = "../data/"
     pos_label_file = "../data/pos_labels.csv"
     cat_label_file = "../data/Lung Nodule Clinical Data_Min Kim (No name).xlsx"
@@ -244,7 +244,7 @@ def main():
     trainLoader = DataLoader(trainData, batch_size=2, shuffle=True)
 
     valData = LungDataset(rootFolder, labeled_only=True, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
-                          cube_size=cube_size, reload=False, train=None)
+                          cube_size=cube_size, reload=False, train=False)
     # valData = LUNA16(train=False)
     valLoader = DataLoader(valData, batch_size=1, shuffle=False)
 
@@ -274,11 +274,13 @@ def main():
     # extra_str = "SGD_lr0.001"
     # extra_str = "Adam_lr0.001_augment"
     # extra_str = "Adam_lr0.001"
-    extra_str = "Test_for_incidental_48_all"
+    # extra_str = "Test_for_incidental_48_all"
+    extra_str = ""
     model = generate_model(18, n_input_channels=1, n_classes=2)
     print("Use model: {:s}".format(modelName))
     # model_folder = "model/classification_negMultiple/"
-    model_folder = "model/classification_LUNA16/"
+    # model_folder = "model/classification_LUNA16/"
+    model_folder = "model/classification_169patients/"
     model_folder += "{:s}_{:s}".format(modelName, extra_str)
     os.makedirs(model_folder, exist_ok=True)
 
