@@ -35,7 +35,8 @@ class LungDataset(Dataset):
         # self.imageInfo = self.imageInfo[:3]
         if screen:
             self.screen()
-        if train: self.load_subset(train)
+        if train is not None:
+            self.load_subset(train)
         self.prepare()
 
     def __len__(self):
@@ -48,6 +49,9 @@ class LungDataset(Dataset):
         feature = self.get_cube(imageId, self.cube_size)
         # feature = feature[np.newaxis, ...]
         label = self.load_cat(imageId)
+        if len(feature) > 1:
+            assert label == 1, "Must be benign cases!"
+            feature = feature[[np.random.randint(len(feature))]]
 
         sample = {"features": feature,
                   "label": label}
@@ -183,7 +187,9 @@ class LungDataset(Dataset):
         mask = np.ones(num_images, dtype=bool)
         for imageId in range(num_images):
             pos = self.load_pos(imageId)
-            if len(pos) > 1:
+            cat = self.load_cat(imageId)
+            if len(pos) > 1 and cat == 0:
+            # if len(pos) > 1:
                 mask[imageId] = False
         self.imageInfo = self.imageInfo[mask]
 
@@ -249,7 +255,7 @@ if __name__ == '__main__':
     cat_label_file = "data/Lung Nodule Clinical Data_Min Kim (No name).xlsx"
     cube_size = 64
     lungData = LungDataset(rootFolder, labeled_only=True, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
-                           cube_size=cube_size, reload=True, train=None, screen=False)
+                           cube_size=cube_size, reload=False, train=None, screen=True)
     # image, new_image = lungData.load_image(0)
     # img = new_image[100]
     # make_lungmask(img, display=True)

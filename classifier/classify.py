@@ -76,8 +76,8 @@ def train(trainLoader, testLoader, model, optimizer, scheduler, criterion, devic
 
         score = np.mean(scores)
         acc = correct / total * 100
-        all_pred = np.array(all_pred).reshape(-1)
-        all_label = np.array(all_label).reshape(-1)
+        all_pred = np.concatenate(all_pred).reshape(-1)
+        all_label = np.concatenate(all_label).reshape(-1)
         confMat = confusion_matrix(all_label, all_pred)
         df_cm = pd.DataFrame(confMat, index=[i for i in range(num_classes)],
                              columns=[i for i in range(num_classes)])
@@ -181,34 +181,71 @@ def train(trainLoader, testLoader, model, optimizer, scheduler, criterion, devic
 
     # return model
 
-def test(finalTestLoader, model, device):
-    sample_batch = next(iter(finalTestLoader))
-    x, y = sample_batch["features"], sample_batch["label"]
-    pred = model(x.to(device))
-    test_y_hat = torch.expm1(pred).cpu().detach().numpy()
+def test(testLoader, model, device, criterion, model_folder, save_folder):
 
-    test_ID = np.arange(1461, 2920).astype(np.int)
-    sub = pd.DataFrame()
-    sub["Id"] = test_ID
-    sub["SalePrice"] = test_y_hat
-    sub.to_csv("submission.csv", index=False)
-    print("Save predictions to: {:s}".format("submission.csv"))
+    epoch = 20
+    model.load_state_dict(torch.load(os.path.join(model_folder, 'epoch_' + str(epoch) + '.pt')))
+    print("load model from: {:s}".format(os.path.join(model_folder, 'epoch_' + str(epoch) + '.pt')))
+    model.eval()
+
+    num_classes = 2
+    scores = []
+    correct = 0
+    total = 0
+    all_pred = []
+    all_label = []
+    for sample_batch in testLoader:
+        x2, y2 = sample_batch["features"].float(), sample_batch["label"]
+        p2 = model(x2.to(device))
+        loss = criterion(p2, y2.to(device))
+        loss.backward()
+
+        c2 = torch.argmax(p2, 1).cpu()
+        total += y2.size(0)
+        correct += (c2 == y2).sum().item()
+        scores.append(loss.cpu().detach().numpy())
+        all_pred.append(c2.numpy())
+        all_label.append(y2.numpy())
+
+    score = np.mean(scores)
+    acc = correct / total * 100
+
+    all_pred = np.array(all_pred).reshape(-1)
+    all_label = np.array(all_label).reshape(-1)
+    confMat = confusion_matrix(all_label, all_pred)
+    df_cm = pd.DataFrame(confMat, index=[i for i in range(num_classes)],
+                         columns=[i for i in range(num_classes)])
+    print("Test confusion matrix: ")
+    print(df_cm)
+    plt.figure()
+    sns.heatmap(df_cm, annot=True, cmap="YlGnBu")
+    plot_folder = os.path.join(save_folder, "test")
+    os.makedirs(plot_folder, exist_ok=True)
+    plt.savefig(os.path.join(plot_folder, "test_confusion_matrix_ep{:d}.png".format(epoch)),
+                bbox_inches="tight", dpi=200)
+    plt.close()
+
+    # print("epoch {:d}, test loss {:.6f}".format(epoch, score))
+    print("epoch {:d} | avg test loss {:.6f} | avg test acc {:.2f}".format(
+        epoch, score, acc))
 
 
 def main():
 
+    Train = False
     rootFolder = "../data/"
     pos_label_file = "../data/pos_labels.csv"
     cat_label_file = "../data/Lung Nodule Clinical Data_Min Kim (No name).xlsx"
+    load_model_folder = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/classifier/model/classification_LUNA16/Resnet18_Adam_lr0.001"
     cube_size = 48
-    # trainData = LungDataset(rootFolder, labeled_only=True, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
-    #                         cube_size=cube_size, reload=False, train=True)
-    trainData = LUNA16(train=True)
+    trainData = LungDataset(rootFolder, labeled_only=True, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
+                            cube_size=cube_size, reload=False, train=True)
+    # trainData = LUNA16(train=True)
     trainLoader = DataLoader(trainData, batch_size=2, shuffle=True)
 
-    # valData = LungDataset(rootFolder, labeled_only=True, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
-    #                       cube_size=cube_size, reload=False, train=False)
-    valData = LUNA16(train=False)
+    valData = LungDataset(rootFolder, labeled_only=True, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
+                          cube_size=cube_size, reload=False, train=None)
+    # valData = LUNA16(train=False)
     valLoader = DataLoader(valData, batch_size=1, shuffle=False)
 
     print("Shape of train_x is: ", (len(trainData), 1,) + (cube_size,) * 3)
@@ -235,9 +272,12 @@ def main():
 
     modelName = "Resnet18"
     # extra_str = "SGD_lr0.001"
-    extra_str = "Adam_lr0.001"
+    # extra_str = "Adam_lr0.001_augment"
+    # extra_str = "Adam_lr0.001"
+    extra_str = "Test_for_incidental_48_all"
     model = generate_model(18, n_input_channels=1, n_classes=2)
     print("Use model: {:s}".format(modelName))
+    # model_folder = "model/classification_negMultiple/"
     model_folder = "model/classification_LUNA16/"
     model_folder += "{:s}_{:s}".format(modelName, extra_str)
     os.makedirs(model_folder, exist_ok=True)
@@ -284,7 +324,10 @@ def main():
     #                      target_transform=transform_y)
     # testLoader = DataLoader(testData, batch_size=len(pseudo_test_x), shuffle=False)
     # Train the model
-    train(trainLoader, valLoader, model, optimizer, scheduler, criterion, device, model_folder)
+    if Train:
+        train(trainLoader, valLoader, model, optimizer, scheduler, criterion, device, model_folder)
+    else:
+        test(valLoader, model, device, criterion, load_model_folder, model_folder)
 
 
     # # Create dataLoader for the final test data
