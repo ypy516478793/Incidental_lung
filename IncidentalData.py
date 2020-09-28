@@ -20,7 +20,7 @@ import os
 
 class LungDataset(Dataset):
     def __init__(self, rootFolder, labeled_only=False, pos_label_file=None, cat_label_file=None, cube_size=64,
-                 reload=False, train=None, screen=True):
+                 reload=False, train=None, screen=True, clinical=False):
         self.imageInfo = []
         self._imageIds = []
         self.cube_size = cube_size
@@ -30,6 +30,8 @@ class LungDataset(Dataset):
             self.cat_df = pd.read_excel(cat_label_file, dtype={"MRN": str})
             cat_key = [i for i in self.cat_df.columns if i.startswith("Category Of")][0]
             self.cats = self.cat_df[cat_key]
+        self.clinical_preprocessing()
+        self.load_clinical = clinical
         self.matches = ["LUNG", "lung"]
         self.load_lung(rootFolder, labeled_only, reload)
         # self.imageInfo = self.imageInfo[:3]
@@ -38,6 +40,9 @@ class LungDataset(Dataset):
         if train is not None:
             self.load_subset(train)
         self.prepare()
+        # if train is True:
+        #     self.screen2()
+        #     self.prepare()
 
     def __len__(self):
         return len(self.imageIds)
@@ -46,10 +51,14 @@ class LungDataset(Dataset):
         if torch.is_tensor(imageId):
             imageId = imageId.tolist()
 
-        feature = self.get_cube(imageId, self.cube_size)
+        if self.load_clinical:
+            feature = self.get_clinical(imageId).astype(np.float32)
+        else:
+            feature = self.get_cube(imageId, self.cube_size)
+
         # feature = feature[np.newaxis, ...]
         label = self.load_cat(imageId)
-        if len(feature) > 1:
+        if len(feature) > 1 and not self.load_clinical:
             assert label == 1, "Must be benign cases!"
             feature = feature[[np.random.randint(len(feature))]]
 
@@ -158,11 +167,11 @@ class LungDataset(Dataset):
 
     def load_lung(self, rootFolder, labeled_only, reload=False):
         if reload:
-            self.imageInfo = np.load(os.path.join(rootFolder, "CTinfo.npz"), allow_pickle=True)["info"].tolist()
+            self.imageInfo = np.load(os.path.join(rootFolder, "CTinfo_oldest.npz"), allow_pickle=True)["info"].tolist()
             self.load_from_dicom(rootFolder, labeled_only=labeled_only)
         else:
             try:
-                self.imageInfo = np.load(os.path.join(rootFolder, "CTinfo.npz"), allow_pickle=True)["info"]
+                self.imageInfo = np.load(os.path.join(rootFolder, "CTinfo_oldest.npz"), allow_pickle=True)["info"]
             except FileNotFoundError:
                 self.load_from_dicom(rootFolder, labeled_only=labeled_only)
         self.imageInfo = np.array(self.imageInfo)
@@ -188,11 +197,43 @@ class LungDataset(Dataset):
         for imageId in range(num_images):
             pos = self.load_pos(imageId)
             cat = self.load_cat(imageId)
-            if len(pos) > 1 and cat == 0:
-            # if len(pos) > 1:
+            if len(pos) > 1:
                 mask[imageId] = False
         self.imageInfo = self.imageInfo[mask]
 
+    def screen2(self):
+        ns = [8, 20, 22, 28, 31, 35, 38, 42, 64, 67]
+        ps = [18, 39, 41, 48, 49, 55, 60, 70, 72, 73]
+        num_images = len(self.imageInfo)
+        mask = np.zeros(num_images, dtype=bool)
+        mask[ns] = True
+        mask[ps] = True
+        self.imageInfo = self.imageInfo[mask]
+
+    def clinical_preprocessing(self):
+        dropCols = ["Patient index",
+                    "Annotation meta info",
+                    "Date Of Surgery {1340}",
+                    "Date of Birth",
+                    "Category Of Disease - Primary {1300} (1=lung cancer, 2=metastatic, 3 = benign nodule, 4= bronchiectasis/pulm sequestration/infection)",
+                    "Date Of Surgery {1340}2",
+                    "Pathologic Staging - Lung Cancer - T {1540}",
+                    "Pathologic Staging - Lung Cancer - N {1550}",
+                    "Pathologic Staging - Lung Cancer - M {1560}",
+                    "Lung Cancer - Number of Nodes {1570}"]
+        self.cat_df = self.cat_df.drop(columns=dropCols)
+        self.cat_df = self.cat_df.replace({"Yes": 1, "No": 0})
+        self.cat_df = self.cat_df.fillna(-1)
+        self.cat_df["Race Documented {191}"] = self.cat_df["Race Documented {191}"].replace("Patient declined to disclose", -1)
+        self.cat_df["Cerebrovascular History {620}"] = self.cat_df["Cerebrovascular History {620}"].astype("category").cat.codes
+        self.cat_df["ASA Classification {1470}"] = self.cat_df["ASA Classification {1470}"].replace({"II": 2, "III":3, "IV": 4})
+        self.cat_df["Cigarette Smoking {730}"] = self.cat_df["Cigarette Smoking {730}"].astype("category").cat.codes
+        from sklearn import preprocessing
+        StandardScaler = preprocessing.StandardScaler()
+        dataCols = self.cat_df.columns[1:]
+        cat_scaled = StandardScaler.fit_transform(self.cat_df[dataCols])
+        data_df = pd.DataFrame(cat_scaled, columns=dataCols)
+        self.cat_df = pd.concat([self.cat_df.iloc[:, 0], data_df], axis=1)
 
     def load_image(self, imageId):
         imgInfo = self.imageInfo[imageId]
@@ -229,6 +270,13 @@ class LungDataset(Dataset):
 
         return cat
 
+    def get_clinical(self, imageId):
+        imgInfo = self.imageInfo[imageId]
+        pid = int(imgInfo["pstr"][-3:])
+        assert self.cat_df.iloc[pid-1]["MRN"].zfill(9) == imgInfo["patientID"]
+        clinical_info = self.cat_df.iloc[pid-1]
+        return clinical_info.values[1:]
+
     def get_cube(self, imageId, size):
         imgInfo = self.imageInfo[imageId]
         pos = self.load_pos(imageId)
@@ -250,12 +298,18 @@ class LungDataset(Dataset):
 
 if __name__ == '__main__':
     # rootFolder = "/Users/yuan_pengyu/Downloads/IncidentalLungCTs_sample/"
+    from torch.utils.data import DataLoader
     rootFolder = "data/"
     pos_label_file = "data/pos_labels.csv"
     cat_label_file = "data/Lung Nodule Clinical Data_Min Kim (No name).xlsx"
     cube_size = 64
+    use_clinical_features = True
     lungData = LungDataset(rootFolder, labeled_only=True, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
-                           cube_size=cube_size, reload=False, train=None, screen=False)
+                           cube_size=cube_size, reload=False, train=True, screen=True, clinical=use_clinical_features)
+    trainLoader = DataLoader(lungData, batch_size=2, shuffle=True)
+    for sample_batch in trainLoader:
+        x1, y1 = sample_batch["features"].float(), sample_batch["label"]
+        print("")
     # image, new_image = lungData.load_image(0)
     # img = new_image[100]
     # make_lungmask(img, display=True)

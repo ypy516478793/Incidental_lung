@@ -1,7 +1,8 @@
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
-from sklearn.preprocessing import RobustScaler
-from sklearn.preprocessing import MinMaxScaler
+import os
+import matplotlib as mpl
+if os.environ.get('DISPLAY','') == '':
+    print('no display found. Using non-interactive Agg backend')
+    mpl.use('Agg')
 
 from sklearn.metrics import confusion_matrix
 from torch.utils.data import DataLoader
@@ -11,6 +12,7 @@ from torchvision import transforms
 from tqdm import tqdm
 
 from classifier.resnet import generate_model
+from classifier.mlp import Net
 
 import torch.optim as optim
 import torch.nn as nn
@@ -32,7 +34,7 @@ class RMSLELoss(nn.Module):
         return torch.sqrt(self.mse(torch.log(pred + 1), torch.log(actual + 1)))
 
 def train(trainLoader, testLoader, model, optimizer, scheduler, criterion, device, model_folder):
-    epochs = 30
+    epochs = 31
     step = 0
     num_classes = 2
     plot_folder = os.path.join(model_folder, "plots")
@@ -167,6 +169,7 @@ def train(trainLoader, testLoader, model, optimizer, scheduler, criterion, devic
         plot_name = "loss curve_ep{:d}.png".format(epochs)
         plt.savefig(os.path.join(model_folder, plot_name), dpi=200, bbox_inches="tight")
         plt.show()
+        plt.close()
 
 
         plt.plot(train_acc, label="Train acc")
@@ -233,18 +236,19 @@ def test(testLoader, model, device, criterion, model_folder, save_folder):
 def main():
 
     Train = True
+    use_clinical_features = True
     rootFolder = "../data/"
     pos_label_file = "../data/pos_labels.csv"
     cat_label_file = "../data/Lung Nodule Clinical Data_Min Kim (No name).xlsx"
     load_model_folder = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/classifier/model/classification_LUNA16/Resnet18_Adam_lr0.001"
-    cube_size = 48
+    cube_size = 64
     trainData = LungDataset(rootFolder, labeled_only=True, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
-                            cube_size=cube_size, reload=False, train=True)
+                            cube_size=cube_size, reload=False, train=True, clinical=use_clinical_features)
     # trainData = LUNA16(train=True)
     trainLoader = DataLoader(trainData, batch_size=2, shuffle=True)
 
     valData = LungDataset(rootFolder, labeled_only=True, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
-                          cube_size=cube_size, reload=False, train=False)
+                          cube_size=cube_size, reload=False, train=False, clinical=use_clinical_features)
     # valData = LUNA16(train=False)
     valLoader = DataLoader(valData, batch_size=1, shuffle=False)
 
@@ -270,17 +274,24 @@ def main():
     # print("Shape of train_y is: ", train_y.shape)
     # print("Shape of test_x is: ", test_x.shape)
 
-    modelName = "Resnet18"
-    # extra_str = "SGD_lr0.001"
-    # extra_str = "Adam_lr0.001_augment"
-    # extra_str = "Adam_lr0.001"
-    # extra_str = "Test_for_incidental_48_all"
     extra_str = ""
-    model = generate_model(18, n_input_channels=1, n_classes=2)
+    if not use_clinical_features:
+        modelName = "Resnet18"
+        # extra_str = "SGD_lr0.001"
+        # extra_str = "Adam_lr0.001_augment"
+        # extra_str = "Adam_lr0.001"
+        # extra_str = "Test_for_incidental_48_all"
+
+        model = generate_model(18, n_input_channels=1, n_classes=2)
+    else:
+        extra_str += "clinical"
+        modelName = "Multilayer perceptron"
+        model = Net(26, output_dim=2)
     print("Use model: {:s}".format(modelName))
     # model_folder = "model/classification_negMultiple/"
     # model_folder = "model/classification_LUNA16/"
-    model_folder = "model/classification_169patients/"
+    # model_folder = "model/classification_169patients/"
+    model_folder = "model/102patients/"
     model_folder += "{:s}_{:s}".format(modelName, extra_str)
     os.makedirs(model_folder, exist_ok=True)
 
