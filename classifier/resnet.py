@@ -111,7 +111,8 @@ class ResNet(nn.Module):
                  no_max_pool=False,
                  shortcut_type='B',
                  widen_factor=1.0,
-                 n_classes=400):
+                 n_classes=400,
+                 clinical=False):
         super().__init__()
 
         block_inplanes = [int(x * widen_factor) for x in block_inplanes]
@@ -147,7 +148,17 @@ class ResNet(nn.Module):
                                        stride=2)
 
         self.avgpool = nn.AdaptiveAvgPool3d((1, 1, 1))
-        self.fc = nn.Linear(block_inplanes[3] * block.expansion, n_classes)
+        self.clinical = clinical
+        if clinical:
+            self.fc_clinical = nn.Sequential(
+                nn.Linear(26, 256),
+                nn.ReLU(),
+                nn.Linear(256, 256),
+                nn.ReLU(),
+            )
+            self.fc = nn.Linear(block_inplanes[3] * block.expansion + 256, n_classes)
+        else:
+            self.fc = nn.Linear(block_inplanes[3] * block.expansion, n_classes)
 
         for m in self.modules():
             if isinstance(m, nn.Conv3d):
@@ -194,6 +205,8 @@ class ResNet(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x):
+        if self.clinical:
+            x, x_clinical = x
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
@@ -208,7 +221,12 @@ class ResNet(nn.Module):
         x = self.avgpool(x)
 
         x = x.view(x.size(0), -1)
-        x = self.fc(x)
+        if self.clinical:
+            x_clinical = self.fc_clinical(x_clinical)
+            x = torch.cat([x, x_clinical], 1)
+            x = self.fc(x)
+        else:
+            x = self.fc(x)
 
         return x
 

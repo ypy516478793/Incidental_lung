@@ -50,9 +50,13 @@ def train(trainLoader, testLoader, model, optimizer, scheduler, criterion, devic
         all_pred = []
         all_label = []
         for sample_batch in trainLoader:
-            x1, y1 = sample_batch["features"].float(), sample_batch["label"]
+            x1, y1 = sample_batch["features"], sample_batch["label"]
+            if isinstance(x1, list):
+                x1 = [x.float().to(device) for x in x1]
+            else:
+                x1 = x1.float().to(device)
             optimizer.zero_grad()
-            p1 = model(x1.to(device))
+            p1 = model(x1)
             loss = criterion(p1, y1.to(device))
             loss.backward()
 
@@ -108,9 +112,13 @@ def train(trainLoader, testLoader, model, optimizer, scheduler, criterion, devic
             all_pred = []
             all_label = []
             for sample_batch in testLoader:
-                x2, y2 = sample_batch["features"].float(), sample_batch["label"]
+                x2, y2 = sample_batch["features"], sample_batch["label"]
+                if isinstance(x2, list):
+                    x2 = [x.float().to(device) for x in x2]
+                else:
+                    x2 = x2.float().to(device)
                 optimizer.zero_grad()
-                p2 = model(x2.to(device))
+                p2 = model(x2)
                 loss = criterion(p2, y2.to(device))
                 loss.backward()
 
@@ -195,8 +203,12 @@ def test(testLoader, model, device, criterion, model_folder, save_folder):
     all_pred = []
     all_label = []
     for sample_batch in testLoader:
-        x2, y2 = sample_batch["features"].float(), sample_batch["label"]
-        p2 = model(x2.to(device))
+        x2, y2 = sample_batch["features"], sample_batch["label"]
+        if isinstance(x2, list):
+            x2 = [x.float().to(device) for x in x2]
+        else:
+            x2 = x2.float().to(device)
+        p2 = model(x2)
         loss = criterion(p2, y2.to(device))
         loss.backward()
 
@@ -233,18 +245,19 @@ def test(testLoader, model, device, criterion, model_folder, save_folder):
 def main():
 
     Train = True
+    use_clinical_features = True
     rootFolder = "../data/"
     pos_label_file = "../data/pos_labels.csv"
     cat_label_file = "../data/Lung Nodule Clinical Data_Min Kim (No name).xlsx"
     load_model_folder = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/classifier/model/classification_LUNA16/Resnet18_Adam_lr0.001"
-    cube_size = 48
+    cube_size = 64
     trainData = LungDataset(rootFolder, labeled_only=True, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
-                            cube_size=cube_size, reload=False, train=True)
+                            cube_size=cube_size, reload=False, train=True, clinical=use_clinical_features)
     # trainData = LUNA16(train=True)
-    trainLoader = DataLoader(trainData, batch_size=2, shuffle=True)
+    trainLoader = DataLoader(trainData, batch_size=3, shuffle=True)
 
     valData = LungDataset(rootFolder, labeled_only=True, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
-                          cube_size=cube_size, reload=False, train=False)
+                          cube_size=cube_size, reload=False, train=False, clinical=use_clinical_features)
     # valData = LUNA16(train=False)
     valLoader = DataLoader(valData, batch_size=1, shuffle=False)
 
@@ -276,7 +289,9 @@ def main():
     # extra_str = "Adam_lr0.001"
     # extra_str = "Test_for_incidental_48_all"
     extra_str = ""
-    model = generate_model(18, n_input_channels=1, n_classes=2)
+    if use_clinical_features:
+        extra_str += "clinical"
+    model = generate_model(18, n_input_channels=1, n_classes=2, clinical=use_clinical_features)
     print("Use model: {:s}".format(modelName))
     # model_folder = "model/classification_negMultiple/"
     # model_folder = "model/classification_LUNA16/"

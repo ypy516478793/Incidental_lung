@@ -20,7 +20,7 @@ import os
 
 class LungDataset(Dataset):
     def __init__(self, rootFolder, labeled_only=False, pos_label_file=None, cat_label_file=None, cube_size=64,
-                 reload=False, train=None, screen=True):
+                 reload=False, train=None, screen=True, clinical=False):
         self.imageInfo = []
         self._imageIds = []
         self.cube_size = cube_size
@@ -30,6 +30,8 @@ class LungDataset(Dataset):
             self.cat_df = pd.read_excel(cat_label_file, dtype={"MRN": str})
             cat_key = [i for i in self.cat_df.columns if i.startswith("Category Of")][0]
             self.cats = self.cat_df[cat_key]
+        self.clinical_preprocessing()
+        self.load_clinical = clinical
         self.matches = ["LUNG", "lung"]
         self.load_lung(rootFolder, labeled_only, reload)
         # self.imageInfo = self.imageInfo[:3]
@@ -46,12 +48,18 @@ class LungDataset(Dataset):
         if torch.is_tensor(imageId):
             imageId = imageId.tolist()
 
+        if self.load_clinical:
+            feature_clinical = self.get_clinical(imageId).astype(np.float32)
         feature = self.get_cube(imageId, self.cube_size)
+
         # feature = feature[np.newaxis, ...]
         label = self.load_cat(imageId)
         if len(feature) > 1:
             assert label == 1, "Must be benign cases!"
             feature = feature[[np.random.randint(len(feature))]]
+
+        if self.load_clinical:
+            feature = (feature, feature_clinical)
 
         sample = {"features": feature,
                   "label": label}
@@ -193,6 +201,30 @@ class LungDataset(Dataset):
                 mask[imageId] = False
         self.imageInfo = self.imageInfo[mask]
 
+    def clinical_preprocessing(self):
+        dropCols = ["Patient index",
+                    "Annotation meta info",
+                    "Date Of Surgery {1340}",
+                    "Date of Birth",
+                    "Category Of Disease - Primary {1300} (1=lung cancer, 2=metastatic, 3 = benign nodule, 4= bronchiectasis/pulm sequestration/infection)",
+                    "Date Of Surgery {1340}2",
+                    "Pathologic Staging - Lung Cancer - T {1540}",
+                    "Pathologic Staging - Lung Cancer - N {1550}",
+                    "Pathologic Staging - Lung Cancer - M {1560}",
+                    "Lung Cancer - Number of Nodes {1570}"]
+        self.cat_df = self.cat_df.drop(columns=dropCols)
+        self.cat_df = self.cat_df.replace({"Yes": 1, "No": 0})
+        self.cat_df = self.cat_df.fillna(-1)
+        self.cat_df["Race Documented {191}"] = self.cat_df["Race Documented {191}"].replace("Patient declined to disclose", -1)
+        self.cat_df["Cerebrovascular History {620}"] = self.cat_df["Cerebrovascular History {620}"].astype("category").cat.codes
+        self.cat_df["ASA Classification {1470}"] = self.cat_df["ASA Classification {1470}"].replace({"II": 2, "III":3, "IV": 4})
+        self.cat_df["Cigarette Smoking {730}"] = self.cat_df["Cigarette Smoking {730}"].astype("category").cat.codes
+        from sklearn import preprocessing
+        StandardScaler = preprocessing.StandardScaler()
+        dataCols = self.cat_df.columns[1:]
+        cat_scaled = StandardScaler.fit_transform(self.cat_df[dataCols])
+        data_df = pd.DataFrame(cat_scaled, columns=dataCols)
+        self.cat_df = pd.concat([self.cat_df.iloc[:, 0], data_df], axis=1)
 
     def load_image(self, imageId):
         imgInfo = self.imageInfo[imageId]
@@ -228,6 +260,13 @@ class LungDataset(Dataset):
         cat = int(cat > 2)
 
         return cat
+
+    def get_clinical(self, imageId):
+        imgInfo = self.imageInfo[imageId]
+        pid = int(imgInfo["pstr"][-3:])
+        assert self.cat_df.iloc[pid-1]["MRN"].zfill(9) == imgInfo["patientID"]
+        clinical_info = self.cat_df.iloc[pid-1]
+        return clinical_info.values[1:]
 
     def get_cube(self, imageId, size):
         imgInfo = self.imageInfo[imageId]
