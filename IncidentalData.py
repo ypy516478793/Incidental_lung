@@ -28,7 +28,7 @@ class LungDataset(Dataset):
             self.cat_df = self.cat_df.drop([10, 11]).reset_index(drop=True)
             cat_key = [i for i in self.cat_df.columns if i.startswith("Category Of")][0]
             self.cats = self.cat_df[cat_key]
-        self.clinical_preprocessing()
+        self.clinical_preprocessing(train)
         self.load_clinical = clinical
         self.matches = ["LUNG", "lung"]
         self.load_lung(rootFolder)
@@ -109,7 +109,7 @@ class LungDataset(Dataset):
     def imageIds(self):
         return self._imageIds
 
-    def clinical_preprocessing(self):
+    def clinical_preprocessing(self, train):
         # dropCols = ["Patient index",
         #             "Annotation meta info",
         #             "Date Of Surgery {1340}",
@@ -128,10 +128,18 @@ class LungDataset(Dataset):
         self.cat_df["Cerebrovascular History {620}"] = self.cat_df["Cerebrovascular History {620}"].astype("category").cat.codes
         self.cat_df["ASA Classification {1470}"] = self.cat_df["ASA Classification {1470}"].replace({"II": 2, "III":3, "IV": 4})
         self.cat_df["Cigarette Smoking {730}"] = self.cat_df["Cigarette Smoking {730}"].astype("category").cat.codes
-        from sklearn import preprocessing
-        StandardScaler = preprocessing.StandardScaler()
-        dataCols = self.cat_df.columns[1:]
-        cat_scaled = StandardScaler.fit_transform(self.cat_df[dataCols])
+
+        if train:
+            from sklearn import preprocessing
+            StandardScaler = preprocessing.StandardScaler()
+            dataCols = self.cat_df.columns[1:]
+            cat_scaled = StandardScaler.fit_transform(self.cat_df[dataCols])
+        else:
+            import pickle
+            with open("scaler.pkl", "rb") as f:
+                StandardScaler = pickle.load(f)
+                dataCols = self.cat_df.columns[1:]
+                cat_scaled = StandardScaler.transform(self.cat_df[dataCols])
         data_df = pd.DataFrame(cat_scaled, columns=dataCols)
         self.cat_df = pd.concat([self.cat_df.iloc[:, 0], data_df], axis=1)
 

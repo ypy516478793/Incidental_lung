@@ -42,7 +42,7 @@ def train(trainLoader, testLoader, model, optimizer, scheduler, criterion, devic
     test_loss = []
     test_acc = []
     test_step = []
-    for epoch in tqdm(range(30, epochs)):
+    for epoch in tqdm(range(0, epochs)):
         model.train()
         scores = []
         correct = 0
@@ -169,7 +169,7 @@ def train(trainLoader, testLoader, model, optimizer, scheduler, criterion, devic
 
 def test(testLoader, model, device, criterion, model_folder, save_folder):
 
-    epoch = 30
+    epoch = 50
     model.load_state_dict(torch.load(os.path.join(model_folder, 'epoch_' + str(epoch) + '.pt')))
     print("load model from: {:s}".format(os.path.join(model_folder, 'epoch_' + str(epoch) + '.pt')))
     model.eval()
@@ -217,16 +217,16 @@ def test(testLoader, model, device, criterion, model_folder, save_folder):
 
 def main():
 
-    Train = True
+    Train = False
     use_clinical_features = False
     rootFolder = "../prepare_for_xinyue/"
     cat_label_file = "../prepare_for_xinyue/clinical_info.xlsx"
-    load_model_folder = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/classifier/model/classification_LUNA16/Resnet18_Adam_lr0.001"
+    load_model_folder = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/classifier/model/20patients/Resnet18_"
     cube_size = 64
     trainData = LungDataset(rootFolder, cat_label_file=cat_label_file, cube_size=cube_size, train=None, clinical=use_clinical_features)
     trainLoader = DataLoader(trainData, batch_size=2, shuffle=True)
 
-    valData = LungDataset(rootFolder, cat_label_file=cat_label_file, cube_size=cube_size, train=False, clinical=use_clinical_features)
+    valData = LungDataset(rootFolder, cat_label_file=cat_label_file, cube_size=cube_size, train=None, clinical=use_clinical_features)
     valLoader = DataLoader(valData, batch_size=1, shuffle=False)
 
     print("Shape of train_x is: ", (len(trainData), 1,) + (cube_size,) * 3)
