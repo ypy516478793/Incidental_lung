@@ -85,12 +85,22 @@ def extract_freq(dataLoader, target_cols):
 
 def main():
 
-    use_clinical_features = True
-    rootFolder = "prepare_for_xinyue/"
-    cat_label_file = "prepare_for_xinyue/clinical_info.xlsx"
+    # use_clinical_features = True
+    # rootFolder = "prepare_for_xinyue/"
+    # cat_label_file = "prepare_for_xinyue/clinical_info.xlsx"
+    # load_model_folder = "../classifier/model/102patients_new/Multilayer perceptron_clinical/"
+    # cube_size = 64
+    # allData = LungDataset(rootFolder, cat_label_file=cat_label_file, cube_size=cube_size, clinical=use_clinical_features)
+
+    rootFolder = "../data/"
+    pos_label_file = "../data/pos_labels.csv"
+    cat_label_file = "../data/Lung Nodule Clinical Data_Min Kim (No name).xlsx"
     load_model_folder = "../classifier/model/102patients_new/Multilayer perceptron_clinical/"
     cube_size = 64
-    allData = LungDataset(rootFolder, cat_label_file=cat_label_file, cube_size=cube_size, clinical=use_clinical_features)
+    use_clinical_features = True
+    allData = LungDataset(rootFolder, labeled_only=True, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
+                           cube_size=cube_size, reload=False, train=None, screen=True, clinical=use_clinical_features)
+
     allLoader = DataLoader(allData, batch_size=len(allData), shuffle=True)
     target_cols = [0, 11, 13, 14, 17]
     target_attr_names = allData.cat_df.columns[[x + 1 for x in target_cols]].to_numpy()
