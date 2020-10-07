@@ -217,6 +217,26 @@ def find_unused_benign(root_folder):
 
     print("")
 
+def prepare_for_detector(rootFolder, saveFolder="Detector_data"):
+    pos_label_file = "data/pos_labels.csv"
+    cat_label_file = "data/Lung Nodule Clinical Data_Min Kim (No name).xlsx"
+    cube_size = 64
+    from IncidentalData import LungDataset
+    lungData = LungDataset(rootFolder, labeled_only=True, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
+                           cube_size=cube_size, reload=False, train=None, screen=False)
+
+    os.makedirs(saveFolder, exist_ok=True)
+    from tqdm import tqdm
+    for idx in tqdm(lungData.imageIds):
+        images = lungData.load_image(idx)
+        pos = lungData.load_pos(idx)
+        images = images[np.newaxis, ...]
+        pos = pos[:, [2, 1, 0, 3]]
+        np.save(os.path.join(saveFolder, "{:d}_clean.npy".format(idx)), images)
+        np.save(os.path.join(saveFolder, "{:d}_label.npy".format(idx)), pos)
+    print("")
+
+
 if __name__ == '__main__':
     # root_folder = "I:\Lung_ai"
     root_folder = "data/"
@@ -234,4 +254,6 @@ if __name__ == '__main__':
     # organize_img(root_folder)
     # move_back_npz(root_folder)
     # create_dataset_details(root_folder)
-    find_unused_benign(root_folder)
+    # find_unused_benign(root_folder)
+
+    prepare_for_detector(root_folder)
