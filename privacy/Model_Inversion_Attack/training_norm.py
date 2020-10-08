@@ -13,8 +13,8 @@ import torch.nn.functional as F
 import torch.optim as optim
 import torch.backends.cudnn as cudnn
 
-from net_norm import *
-from utils_norm import *
+from privacy.Model_Inversion_Attack.net_norm import *
+from privacy.Model_Inversion_Attack.utils_norm import *
 # from preprocess_test import *
 
 def train(DATASET = 'CIFAR10', network = 'MIASCNN', NEpochs = 200, imageWidth = 32,
@@ -22,26 +22,26 @@ def train(DATASET = 'CIFAR10', network = 'MIASCNN', NEpochs = 200, imageWidth = 
         BatchSize = 32, learningRate = 1e-3, NDecreaseLR = 20, eps = 1e-3,
         AMSGrad = True, model_dir = "checkpoints/CIFAR10/", model_name = "ckpt.pth", gpu = True):
 
-    print "DATASET: ", DATASET
+    print("DATASET: ", DATASET)
 
 
 ###load data
 
     if DATASET == 'Medical':  
         
-        h5f = h5py.File('/home/c3_server2/Documents/Maoqiang_Python/MICCAI/pretrained_model/pretrained_model/Code/classifier/lung_train.h5', 'r')
+        h5f = h5py.File('/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/privacy/Model_Inversion_Attack/lung_train76.h5', 'r')
         X_train = h5f['x'][:]
         Y_train = h5f['y'][:]
         h5f.close()
 
-        h5f = h5py.File('/home/c3_server2/Documents/Maoqiang_Python/MICCAI/pretrained_model/pretrained_model/Code/classifier/lung_test.h5', 'r')
+        h5f = h5py.File('/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/privacy/Model_Inversion_Attack/lung_test26.h5', 'r')
         X_test = h5f['x'][:]
         Y_test = h5f['y'][:]
         h5f.close()
         
 
-        print Y_train
-        print Y_test
+        print(Y_train)
+        print(Y_test)
         X_train = preprocess(X_train)
         X_test = preprocess(X_test)
 
@@ -54,12 +54,12 @@ def train(DATASET = 'CIFAR10', network = 'MIASCNN', NEpochs = 200, imageWidth = 
     if network in netDict:               
         net = netDict[network](NChannels)
     else:
-        print "Network not found"
+        print("Network not found")
         exit(1)
 
-    print net
-    print "len(trainset) ", len(X_train)
-    print "len(testset) ", len(X_test)
+    print(net)
+    print("len(trainset) ", len(X_train))
+    print("len(testset) ", len(X_test))
 
 ### pararmeters
     criterion = nn.CrossEntropyLoss()
@@ -72,7 +72,7 @@ def train(DATASET = 'CIFAR10', network = 'MIASCNN', NEpochs = 200, imageWidth = 
 
     optimizer = optim.Adam(params = net.parameters(), lr = learningRate, eps = eps, amsgrad = AMSGrad) # Adam optimizer
     # optimizer = torch.optim.SGD(net.parameters(), lr=learningRate)                        # SGD optimizer
-    NBatch = len(X_train) / BatchSize
+    NBatch = int(len(X_train) / BatchSize)
     cudnn.benchmark = True
 
 ###training
@@ -87,7 +87,7 @@ def train(DATASET = 'CIFAR10', network = 'MIASCNN', NEpochs = 200, imageWidth = 
         for i in range(NBatch):
             
             ### batch data (shuffle)
-            index = np.random.randint(0, 14, BatchSize)
+            index = np.random.randint(0, len(X_train), BatchSize)
             batchX = X_train[index]
             batchX = torch.from_numpy(batchX)
             batchX = batchX.view(-1,1,64,64).type(torch.FloatTensor) 
@@ -139,7 +139,7 @@ def train(DATASET = 'CIFAR10', network = 'MIASCNN', NEpochs = 200, imageWidth = 
             learningRate = learningRate / 2.0
             setLearningRate(optimizer, learningRate)
 
-        print "Epoch: ", epoch, "Loss: ", lossTrain, "Train accuracy: ", accTrain
+        print("Epoch: ", epoch, "Loss: ", lossTrain, "Train accuracy: ", accTrain)
 
 ### Testing
 
@@ -150,14 +150,14 @@ def train(DATASET = 'CIFAR10', network = 'MIASCNN', NEpochs = 200, imageWidth = 
     if not os.path.exists(model_dir):
         os.makedirs(model_dir)
     torch.save(net, model_dir + model_name)
-    print "Model saved"
+    print("Model saved")
 
 ### load trained network
 
     newNet = torch.load(model_dir + model_name)
     newNet.eval()
     accTest = evalTest(X_test, Y_test, net, gpu = gpu)
-    print "Model restore done"
+    print("Model restore done")
 
 
 if __name__ == '__main__':
@@ -194,7 +194,7 @@ if __name__ == '__main__':
 
 
         else:
-            print "No Dataset Found"
+            print("No Dataset Found")
             exit(0)
 
         

@@ -39,7 +39,7 @@ def clip_grad(parameters, grad_norm_bound):
     if isinstance(parameters, torch.Tensor):
         parameters = [parameters]
 
-    parameters = list(filter(lambda p: p.grad is not None, parameters))
+    parameters = list([p for p in parameters if p.grad is not None])
     C = float(grad_norm_bound)                   # gradient norm bound
     norm_type = 2.0                        # norm type
 
@@ -90,7 +90,7 @@ def add_noise(parameters, grad_norm_bound, scale):
     if isinstance(parameters, torch.Tensor):
         parameters = [parameters]
 
-    parameters = list(filter(lambda p: p.grad is not None, parameters))
+    parameters = list([p for p in parameters if p.grad is not None])
     # C = float(grad_norm_bound)
     
     scale = float(scale)
@@ -133,18 +133,18 @@ def add_noise_inference(parameters, scale):
     
     for p in parameters:
         
-        print torch.max(p)
+        print(torch.max(p))
         grad_shape = p.data.shape
         noise = generator.sample(grad_shape) # generate noise with shape "grad_shape"
         noise = noise.cuda()
         p.data.add_(noise)              # add noise to grad
-        print torch.max(p)
+        print(torch.max(p))
 
 
 def accuracy(predictions, labels):
 
     if not (predictions.shape == labels.shape):
-        print "predictions.shape ", predictions.shape, "labels.shape ", labels.shape
+        print("predictions.shape ", predictions.shape, "labels.shape ", labels.shape)
         raise AssertionError
 
     correctly_predicted = np.sum(np.argmax(predictions, 1) == np.argmax(labels, 1))
@@ -251,8 +251,8 @@ def evalTest(X_test, Y_test, net, gpu = True):
         acc += np.sum(pred == groundTruth)
     accTest = acc / NBatch
     
-    print "Label0 ", predd
-    print "Test accuracy: ", accTest #, "NBatch: ", NBatch, "pred == groundTruth.shape", (pred == groundTruth).shape
+    print("Label0 ", predd)
+    print("Test accuracy: ", accTest) #, "NBatch: ", NBatch, "pred == groundTruth.shape", (pred == groundTruth).shape
     return accTest
 
 
@@ -354,7 +354,7 @@ def getL1Stat(net, x):
     for layer in net.layerDict:
         targetLayer = net.layerDict[layer]
         layerOutput = net.getLayerOutput(x, targetLayer)
-        print "Layer " + layer + ' l1 loss:', l1loss(layerOutput).cpu().detach().numpy()
+        print("Layer " + layer + ' l1 loss:', l1loss(layerOutput).cpu().detach().numpy())
 
 
 def getModule(net, blob):
@@ -365,7 +365,7 @@ def getModule(net, blob):
 #    else:
 
     curr_module = net
-    print curr_module
+    print(curr_module)
     for m in modules:
         curr_module = curr_module._modules.get(m)
     return curr_module
@@ -398,7 +398,7 @@ def evalTestSplitModel(testloader, netEdge, netCloud, layer, gpu):
 
         try:
             edgeOutput = netEdge.getLayerOutput(batchX, netEdge.layerDict[layer]).clone()
-        except Exception, e:
+        except Exception as e:
             #print "Except in evalTestSplitModel getLayerOutput, this is a Edge-only model"
             #print str(e)
             edgeOutput = netEdge.forward(batchX).clone()

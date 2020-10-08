@@ -15,8 +15,8 @@ import torch.nn.functional as F
 import torch.optim as optim
 import torch.backends.cudnn as cudnn
 
-from net_norm import *
-from utils_norm import *
+from privacy.Model_Inversion_Attack.net_norm import *
+from privacy.Model_Inversion_Attack.utils_norm import *
 
 #####################
 # Training:
@@ -32,24 +32,24 @@ def trainDecoderDNN(DATASET = 'CIFAR10', network = 'CIFAR10CNNDecoder', NEpochs 
             NDecreaseLR = 20, eps = 1e-3, AMSGrad = True, model_dir = "checkpoints/CIFAR10/", model_name = "ckpt.pth", save_decoder_dir = "checkpoints/CIFAR10/",
             decodername_name = 'CIFAR10CNNDecoderReLU22', gpu = True, validation=False):
 
-    print "DATASET: ", DATASET
+    print("DATASET: ", DATASET)
 
 ###load data
 
     if DATASET == 'Medical':  
         
-        h5f = h5py.File('/home/c3_server2/Documents/Maoqiang_Python/MICCAI/pretrained_model/pretrained_model/Code/classifier/lung_train.h5', 'r')
+        h5f = h5py.File('/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/privacy/Model_Inversion_Attack/lung_train76.h5', 'r')
         X_train = h5f['x'][:]
         Y_train = h5f['y'][:]
         h5f.close()
 
-        h5f = h5py.File('/home/c3_server2/Documents/Maoqiang_Python/MICCAI/pretrained_model/pretrained_model/Code/classifier/lung_test.h5', 'r')
+        h5f = h5py.File('/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/privacy/Model_Inversion_Attack/lung_test26.h5', 'r')
         X_test = h5f['x'][:]
         Y_test = h5f['y'][:]
         h5f.close()
         
     else:
-        print "Dataset unsupported"
+        print("Dataset unsupported")
         exit(1)
 
     # c1 = np.where(Y_train == 2)
@@ -60,11 +60,11 @@ def trainDecoderDNN(DATASET = 'CIFAR10', network = 'CIFAR10CNNDecoder', NEpochs 
     X_train = preprocess(X_train)
     X_test = preprocess(X_test)
 
-    print "len(trainset) ", len(X_train)
-    print "len(testset) ", len(X_test)
+    print("len(trainset) ", len(X_train))
+    print("len(testset) ", len(X_test))
 
-    print "x_trainset.shape ", X_train.shape
-    print "x_testset.shape ", X_test.shape
+    print("x_trainset.shape ", X_train.shape)
+    print("x_testset.shape ", X_test.shape)
 
 
 
@@ -73,13 +73,13 @@ def trainDecoderDNN(DATASET = 'CIFAR10', network = 'CIFAR10CNNDecoder', NEpochs 
     if not gpu:
         net = net.cpu()
     net.eval()
-    print "Validate the model accuracy..."
+    print("Validate the model accuracy...")
     if validation:
         accTest = evalTest(X_test, Y_test, net, gpu = gpu)
      
     # add_noise_inference(net.parameters(), scale=0.02)
     
-    print "Validate the noisy model accuracy..."
+    print("Validate the noisy model accuracy...")
     if validation:
         accTest = evalTest(X_test, Y_test, net, gpu = gpu)
 
@@ -96,12 +96,12 @@ def trainDecoderDNN(DATASET = 'CIFAR10', network = 'CIFAR10CNNDecoder', NEpochs 
     batchY = Y_train[0]
     batchX = torch.from_numpy(batchX)
     batchX = batchX.view(-1,1,64,64).type(torch.FloatTensor)                   # /255
-    print(batchX.shape)
+    print((batchX.shape))
 
     if gpu:
         batchX = batchX.cuda()
     originalModelOutput = net.getLayerOutput(batchX, net.layerDict[layer]).clone()
-    print(originalModelOutput.shape)
+    print((originalModelOutput.shape))
 
 
 ### Construct inversion network
@@ -117,7 +117,7 @@ def trainDecoderDNN(DATASET = 'CIFAR10', network = 'CIFAR10CNNDecoder', NEpochs 
     if gpu:
         decoderNet = decoderNet.cuda()
 
-    print decoderNet
+    print(decoderNet)
 
 
 ### MSE
@@ -127,7 +127,7 @@ def trainDecoderDNN(DATASET = 'CIFAR10', network = 'CIFAR10CNNDecoder', NEpochs 
 
 ### parameters
         
-    NBatch = len(X_train) / BatchSize 
+    NBatch = int(len(X_train) / BatchSize)
     cudnn.benchmark = True
     optimizer = optim.Adam(params = decoderNet.parameters(), lr = learningRate, eps = eps, amsgrad = AMSGrad)
 
@@ -137,7 +137,7 @@ def trainDecoderDNN(DATASET = 'CIFAR10', network = 'CIFAR10CNNDecoder', NEpochs 
         accTrain = 0.0
          
         for i in range(NBatch):
-            index = np.random.randint(0,14,BatchSize)                         ###random batch
+            index = np.random.randint(0,len(X_train),BatchSize)                         ###random batch
 
             ### process traindata and label
             batchX = X_train[index]
@@ -221,7 +221,7 @@ def trainDecoderDNN(DATASET = 'CIFAR10', network = 'CIFAR10CNNDecoder', NEpochs 
 
 
 
-        print "Epoch ", epoch, "Train Loss: ", lossTrain #,"Test Loss: ", mvalLoss.cpu().detach().numpy()
+        print("Epoch ", epoch, "Train Loss: ", lossTrain) #,"Test Loss: ", mvalLoss.cpu().detach().numpy()
         if (epoch + 1) % NDecreaseLR == 0:
             learningRate = learningRate / 2.0
             setLearningRate(optimizer, learningRate)
@@ -230,18 +230,18 @@ def trainDecoderDNN(DATASET = 'CIFAR10', network = 'CIFAR10CNNDecoder', NEpochs 
     if validation:
         accTestEnd = evalTest(X_test, Y_test, net, gpu = gpu)
         if accTest != accTestEnd:
-            print "Something wrong. Original model has been modified!"
+            print("Something wrong. Original model has been modified!")
             exit(1)
 
 ### save decoder model
     if not os.path.exists(save_decoder_dir):
         os.makedirs(save_decoder_dir)
     torch.save(decoderNet, save_decoder_dir + decodername_name)
-    print "Model saved"
+    print("Model saved")
 
     newNet = torch.load(save_decoder_dir + decodername_name)
     newNet.eval()
-    print "Model restore done"
+    print("Model restore done")
 
 
 def inverse(DATASET = 'CIFAR10', imageWidth = 32, inverseClass = None, imageHeight = 32,
@@ -249,8 +249,8 @@ def inverse(DATASET = 'CIFAR10', imageWidth = 32, inverseClass = None, imageHeig
         model_dir = "checkpoints/CIFAR10/", model_name = "ckpt.pth", decoder_name = "CIFAR10CNNDecoderconv11.pth",
         save_img_dir = "inverted_blackbox_decoder/CIFAR10/", gpu = True, validation=False):
 
-    print "DATASET: ", DATASET
-    print "inverseClass: ", inverseClass
+    print("DATASET: ", DATASET)
+    print("inverseClass: ", inverseClass)
 
     assert inverseClass < NClasses
 
@@ -258,28 +258,28 @@ def inverse(DATASET = 'CIFAR10', imageWidth = 32, inverseClass = None, imageHeig
 
     if DATASET == 'Medical':  
         
-        h5f = h5py.File('/home/c3_server2/Documents/Maoqiang_Python/MICCAI/pretrained_model/pretrained_model/Code/classifier/lung_train.h5', 'r')
+        h5f = h5py.File('/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/privacy/Model_Inversion_Attack/lung_train76.h5', 'r')
         X_train = h5f['x'][:]
         Y_train = h5f['y'][:]
         h5f.close()
 
-        h5f = h5py.File('/home/c3_server2/Documents/Maoqiang_Python/MICCAI/pretrained_model/pretrained_model/Code/classifier/lung_test.h5', 'r')
+        h5f = h5py.File('/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/privacy/Model_Inversion_Attack/lung_test26.h5', 'r')
         X_test = h5f['x'][:]
         Y_test = h5f['y'][:]
         h5f.close()    
                 
     else:
-        print "Dataset unsupported"
+        print("Dataset unsupported")
         exit(1)
         
     X_train = preprocess(X_train)
     X_test = preprocess(X_test)
     
-    print "len(trainset) ", len(X_train)
-    print "len(testset) ", len(X_test)
+    print("len(trainset) ", len(X_train))
+    print("len(testset) ", len(X_test))
 
-    print "x_trainset.shape ", X_train.shape
-    print "x_testset.shape ", X_test.shape
+    print("x_trainset.shape ", X_train.shape)
+    print("x_testset.shape ", X_test.shape)
 
 ###load original network
 
@@ -287,7 +287,7 @@ def inverse(DATASET = 'CIFAR10', imageWidth = 32, inverseClass = None, imageHeig
     if not gpu:
         net = net.cpu()
     net.eval()
-    print "Validate the model accuracy..."
+    print("Validate the model accuracy...")
 
     if validation:
         accTest = evalTest(X_test, Y_test, net, gpu = gpu)
@@ -298,7 +298,7 @@ def inverse(DATASET = 'CIFAR10', imageWidth = 32, inverseClass = None, imageHeig
     if not gpu:
         decoderNet = decoderNet.cpu()
     decoderNet.eval()
-    print decoderNet
+    print(decoderNet)
 
 
 
@@ -320,7 +320,7 @@ def inverse(DATASET = 'CIFAR10', imageWidth = 32, inverseClass = None, imageHeig
 
     targetImg = torch.from_numpy(batchx)
     targetImg = targetImg.view(-1,1,64,64).type(torch.FloatTensor)        
-    print "targetImg.size()", targetImg.size()
+    print("targetImg.size()", targetImg.size())
     batchy = torch.Tensor([batchy]).long()
 
 
@@ -330,7 +330,7 @@ def inverse(DATASET = 'CIFAR10', imageWidth = 32, inverseClass = None, imageHeig
         targetImg = targetImg.cuda()
     targetLayer = net.layerDict[layer]
     refFeature = net.getLayerOutput(targetImg, targetLayer)
-    print "refFeature.size()", refFeature.size()
+    print("refFeature.size()", refFeature.size())
 
     xGen = decoderNet.forward(refFeature)
 
@@ -343,8 +343,8 @@ def inverse(DATASET = 'CIFAR10', imageWidth = 32, inverseClass = None, imageHeig
     MSELossLayer = torch.nn.MSELoss()
     if gpu:
         MSELossLayer = MSELossLayer.cuda()
-    print "MSE 1", MSELossLayer(visionx1, visionx2).cpu().detach().numpy()
-    print "MSE 2", MSELossLayer(visionx1 / 255, visionx2 / 255).cpu().detach().numpy()
+    print("MSE 1", MSELossLayer(visionx1, visionx2).cpu().detach().numpy())
+    print("MSE 2", MSELossLayer(visionx1 / 255, visionx2 / 255).cpu().detach().numpy())
 
 
 ### save the final result
@@ -360,7 +360,7 @@ def inverse(DATASET = 'CIFAR10', imageWidth = 32, inverseClass = None, imageHeig
     if not os.path.exists(save_img_dir):
         os.makedirs(save_img_dir)
     ximg.save( save_img_dir + str(inverseClass) + '-invv.png') 
-    print "Done"
+    print("Done")
 
 
 
@@ -385,10 +385,10 @@ if __name__ == '__main__':
         parser.add_argument('--batch_size', type = int, default =1)
         parser.add_argument('--learning_rate', type = float, default = 1e-3)
         parser.add_argument('--decrease_LR', type = int, default = 10)
-        parser.add_argument('--layer', type = str, default = 'conv12')
+        parser.add_argument('--layer', type = str, default = 'conv32')
         parser.add_argument('--save_iter', type = int, default = 10)
         parser.add_argument('--inverseClass', type = int, default = 0)
-        parser.add_argument('--decodername', type = str, default = "CNN_original_non_12")
+        parser.add_argument('--decodername', type = str, default = "CNN_original_non_32")
 
         parser.add_argument('--nogpu', dest='gpu', action='store_false')
         parser.set_defaults(gpu=True)
@@ -412,14 +412,14 @@ if __name__ == '__main__':
             NClasses = 2
 
         else:
-            print "No Dataset Found"
+            print("No Dataset Found")
             exit()
 
 ### train
-        # trainDecoderDNN(DATASET = args.dataset, network = 'CIFAR10CNNDecoder', NEpochs = args.iters, imageWidth = imageWidth,
-        # imageHeight = imageHeight, imageSize = imageSize, NChannels = NChannels, NClasses = NClasses, layer = args.layer, BatchSize = args.batch_size, learningRate = args.learning_rate,
-        # NDecreaseLR = args.decrease_LR, eps = args.eps, AMSGrad = True, model_dir = "models/Medical/", model_name = model_name, save_decoder_dir = "models/Medical/",
-        # decodername_name = decoder_name, gpu = args.gpu, validation=args.validation)    
+        trainDecoderDNN(DATASET = args.dataset, network = 'CIFAR10CNNDecoder', NEpochs = args.iters, imageWidth = imageWidth,
+        imageHeight = imageHeight, imageSize = imageSize, NChannels = NChannels, NClasses = NClasses, layer = args.layer, BatchSize = args.batch_size, learningRate = args.learning_rate,
+        NDecreaseLR = args.decrease_LR, eps = args.eps, AMSGrad = True, model_dir = "models/Medical/", model_name = model_name, save_decoder_dir = "models/Medical/",
+        decodername_name = decoder_name, gpu = args.gpu, validation=args.validation)
 
 ### test
         for c in range(NClasses):

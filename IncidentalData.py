@@ -233,7 +233,7 @@ class LungDataset(Dataset):
             cat_scaled = StandardScaler.fit_transform(self.cat_df[dataCols])
         else:
             import pickle
-            with open("scaler.pkl", "rb") as f:
+            with open("/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/classifier/scaler.pkl", "rb") as f:
                 StandardScaler = pickle.load(f)
                 dataCols = self.cat_df.columns[1:]
                 cat_scaled = StandardScaler.transform(self.cat_df[dataCols])
@@ -302,9 +302,9 @@ if __name__ == '__main__':
     pos_label_file = "data/pos_labels.csv"
     cat_label_file = "data/Lung Nodule Clinical Data_Min Kim (No name).xlsx"
     cube_size = 64
-    use_clinical_features = True
+    use_clinical_features = False
     lungData = LungDataset(rootFolder, labeled_only=True, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
-                           cube_size=cube_size, reload=False, train=True, screen=True, clinical=use_clinical_features)
+                           cube_size=cube_size, reload=False, train=False, screen=True, clinical=use_clinical_features)
     trainLoader = DataLoader(lungData, batch_size=2, shuffle=True)
     for sample_batch in trainLoader:
         x1, y1 = sample_batch["features"].float(), sample_batch["label"]

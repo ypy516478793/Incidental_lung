@@ -1,7 +1,7 @@
 from collections import defaultdict
 from natsort import natsorted
 from tqdm import tqdm
-from utils_test import check_fileType, read_slices, load_dicom, extract_cube, resample_image, resample_pos, make_lungmask, lumTrans
+from privacy.Model_Inversion_Attack.utils_test import check_fileType, read_slices, load_dicom, extract_cube, resample_image, resample_pos, make_lungmask, lumTrans
 from torch.utils.data import Dataset
 from sklearn.cluster import KMeans
 from skimage import morphology
@@ -207,7 +207,7 @@ def main():
         x1 = x1.view(64,64,64)
         x = x1[32]
         x = np.array(x).astype('float64')  #.astype(np.uint8)
-        print(x.shape)
+        print((x.shape))
         print(ii)
         images_train[ii] = x
         labels_train[ii] = y1
@@ -222,7 +222,7 @@ def main():
         x1 = x1.view(64,64,64)
         x = x1[32]
         x = np.array(x).astype('float64')  #.astype(np.uint8)
-        print(x.shape)
+        print((x.shape))
         print(ii)
         images_test[ii] = x
         labels_test[ii] = y1

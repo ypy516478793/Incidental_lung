@@ -173,7 +173,7 @@ class CIFAR10CNN(nn.Module):
                     x = func(x)
                 return x
         else:
-            print "layer not exists"
+            print("layer not exists")
             exit(1)
 
 
@@ -190,7 +190,7 @@ class CIFAR10CNN(nn.Module):
                 return x
 
         # Should not go here
-        print "Target layer not found"
+        print("Target layer not found")
         exit(1)
 
 
