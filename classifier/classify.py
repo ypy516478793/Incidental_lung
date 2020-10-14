@@ -248,7 +248,7 @@ def main():
     use_clinical_features = True
     rootFolder = "../data/"
     pos_label_file = "../data/pos_labels.csv"
-    cat_label_file = "../data/Lung Nodule Clinical Data_Min Kim (No name).xlsx"
+    cat_label_file = "../data/Lung Nodule Clinical Data_Min Kim - Added Variables 10-2-2020.xlsx"
     load_model_folder = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/classifier/model/classification_LUNA16/Resnet18_Adam_lr0.001"
     cube_size = 64
     trainData = LungDataset(rootFolder, labeled_only=True, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
@@ -284,13 +284,13 @@ def main():
     # print("Shape of test_x is: ", test_x.shape)
 
     modelName = "Resnet18"
-    # extra_str = "SGD_lr0.001"
+    extra_str = "SGD_lr0.001"
     # extra_str = "Adam_lr0.001_augment"
     # extra_str = "Adam_lr0.001"
     # extra_str = "Test_for_incidental_48_all"
-    extra_str = ""
+    # extra_str = ""
     if use_clinical_features:
-        extra_str += "clinical"
+        extra_str += "additional_clinical"
     model = generate_model(18, n_input_channels=1, n_classes=2, clinical=use_clinical_features)
     print("Use model: {:s}".format(modelName))
     # model_folder = "model/classification_negMultiple/"
@@ -310,9 +310,9 @@ def main():
     criterion = nn.CrossEntropyLoss()
     # criterion_test = nn.L1Loss()
 
-    # optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9, weight_decay=0.001)
+    optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9, weight_decay=0.001)
     # optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=0.1)
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    # optimizer = optim.Adam(model.parameters(), lr=0.001)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, cooldown=10, min_lr=0.0001, patience=100)
 
     # scaler = RobustScaler()

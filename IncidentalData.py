@@ -27,7 +27,8 @@ class LungDataset(Dataset):
         if pos_label_file:
             self.pos_df = pd.read_csv(pos_label_file, dtype={"date": str})
         if cat_label_file:
-            self.cat_df = pd.read_excel(cat_label_file, dtype={"MRN": str})
+            self.cat_df = pd.read_excel(cat_label_file, dtype={"MRN": str}, sheet_name='Sheet1')
+            self.additional_df = pd.read_excel(cat_label_file, dtype={"MRN": str}, sheet_name='Sheet2')
             cat_key = [i for i in self.cat_df.columns if i.startswith("Category Of")][0]
             self.cats = self.cat_df[cat_key]
         self.clinical_preprocessing()
@@ -202,6 +203,27 @@ class LungDataset(Dataset):
         self.imageInfo = self.imageInfo[mask]
 
     def clinical_preprocessing(self):
+        dropCols = ["Sex"]
+        for col in self.additional_df.columns[2:]:
+            if self.additional_df[col].isnull().values.all():
+                dropCols.append(col)
+        self.additional_df = self.additional_df.drop(columns=dropCols)
+        self.additional_df = self.additional_df.replace({"Y": 1, "N": 0})
+        self.additional_df = self.additional_df.fillna(-1)
+        for col in ["Race", "Ethnicity", "Insurance"]:
+            self.additional_df[col] = self.additional_df[col].astype("category").cat.codes
+
+        newOrder = []
+        for i in range(len(self.cat_df)):
+            MRN = self.cat_df.iloc[i]["MRN"]
+            DOS = self.cat_df.iloc[i]["Date Of Surgery {1340}"]
+            existId = (self.additional_df["MRN"] == MRN) & (self.additional_df["Date Of Surgery {1340}"] == DOS)
+            idx = self.additional_df[existId].index
+            assert len(idx) == 1
+            newOrder.append(idx[0])
+        self.reOrderAdditional_df = self.additional_df.reindex(newOrder).reset_index(drop=True)
+        self.cat_df = pd.concat([self.cat_df, self.reOrderAdditional_df.iloc[:, 2:]], axis=1)
+
         dropCols = ["Patient index",
                     "Annotation meta info",
                     "Date Of Surgery {1340}",

@@ -151,7 +151,7 @@ class ResNet(nn.Module):
         self.clinical = clinical
         if clinical:
             self.fc_clinical = nn.Sequential(
-                nn.Linear(26, 256),
+                nn.Linear(37, 256),
                 nn.ReLU(),
                 nn.Linear(256, 256),
                 nn.ReLU(),
