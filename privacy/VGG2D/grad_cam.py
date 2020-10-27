@@ -100,6 +100,49 @@ def deprocess_image(x):
     x = np.clip(x, 0, 255).astype('uint8')
     return x
 
+def grad_cam_tf(sess, model, image, category_index, layer_name):
+
+    nb_classes = 2
+    model.target_logit = tf.multiply(model.logits, K.one_hot([category_index], nb_classes))
+    loss = K.sum(model.target_logit)
+
+    if layer_name == 'block5_conv3':
+        conv_output = model.conv5_3
+    elif layer_name == 'block5_conv4':
+        conv_output = model.conv5_4
+
+    grads = normalize(K.gradients(loss, conv_output)[0])
+
+    feed_dict = {model.images: image,
+                 model.train_mode: False}
+    output_tensor = [conv_output, grads]
+
+    output, grads_val = sess.run(output_tensor, feed_dict)
+    output, grads_val = output[0, :], grads_val[0, :, :, :]
+
+
+    weights = np.mean(grads_val, axis = (0, 1))
+    cam = np.ones(output.shape[0 : 2], dtype = np.float32)
+
+    for i, w in enumerate(weights):
+        cam += w * output[:, :, i]
+
+    cam = cv2.resize(cam, (224, 224))
+    cam = np.maximum(cam, 0)
+    heatmap = cam / np.max(cam)
+
+    #Return to BGR [0..255] from the preprocessed image
+    image = image[0, :]
+    image -= np.min(image)
+    image = np.minimum(image, 255)
+
+    cam = cv2.applyColorMap(np.uint8(255*heatmap), cv2.COLORMAP_JET)
+    cam = np.float32(cam) + np.float32(image)
+    cam = 255 * cam / np.max(cam)
+
+    return np.uint8(cam), heatmap
+
+
 def grad_cam(input_model, image, category_index, layer_name):
     model = Sequential()
     model.add(input_model)
@@ -140,27 +183,49 @@ def grad_cam(input_model, image, category_index, layer_name):
 if __name__ == '__main__':
 
     data_dir = "../../data/"
+    save_dir = "gradcam"
+    os.makedirs(save_dir, exist_ok=True)
+
     images_path = os.path.join(data_dir, "2D_incidental_lung.npz")
     images = np.load(images_path, allow_pickle = True)["x"]
 
     # preprocessed_input = load_image(sys.argv[1])
-    preprocessed_input = load_image_array(images[0])
+    from privacy.VGG2D.train_vgg import Vgg19
 
+    load_path = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/privacy/VGG2D/results/bs_16.lr_0.001_copy/vgg19_epoch22.npy"
+    model = Vgg19(load_path, pretrain=False)
+    model.construct(False)
 
-    model = VGG19(weights='imagenet')
+    sess = tf.Session()
+    sess.run(tf.global_variables_initializer())
 
-    predictions = model.predict(preprocessed_input)
-    top_1 = decode_predictions(predictions)[0][0]
-    print('Predicted class:')
-    print('%s (%s) with probability %.2f' % (top_1[1], top_1[0], top_1[2]))
+    for i in range(len(images)):
+        preprocessed_input = load_image_array(images[i])
+        feed_dict_test = {model.images: preprocessed_input,
+                         # model.labels: y_batch_test,
+                         model.train_mode: False}
+        # output_tensor = [model.total_loss, model.acc, model.labels, model.prob]
+        output_tensor = model.prob
+        predictions = sess.run(output_tensor, feed_dict_test)
+        predicted_class = np.argmax(predictions)
+        print('Sample {:d}, predicted class:'.format(i))
+        print('{:d} with probability {:.2f}'.format(predicted_class, predictions.max()))
 
-    predicted_class = np.argmax(predictions)
-    cam, heatmap = grad_cam(model, preprocessed_input, predicted_class, "block5_conv3")
-    cv2.imwrite("gradcam.jpg", cam)
+        # model = VGG19(weights='imagenet')
+        # predictions = model.predict(preprocessed_input)
+        # top_1 = decode_predictions(predictions)[0][0]
+        # print('Predicted class:')
+        # print('%s (%s) with probability %.2f' % (top_1[1], top_1[0], top_1[2]))
+        # predicted_class = np.argmax(predictions)
 
-    register_gradient()
-    guided_model = modify_backprop(model, 'GuidedBackProp')
-    saliency_fn = compile_saliency_function(guided_model)
-    saliency = saliency_fn([preprocessed_input, 0])
-    gradcam = saliency[0] * heatmap[..., np.newaxis]
-    cv2.imwrite("guided_gradcam.jpg", deprocess_image(gradcam))
+        # cam, heatmap = grad_cam(model, preprocessed_input, predicted_class, "block5_conv3")
+        cam, heatmap = grad_cam_tf(sess, model, preprocessed_input, predicted_class, "block5_conv3")
+        cv2.imwrite(os.path.join(save_dir, "gradcam_{:d}.jpg".format(i)), cam)
+        cv2.imwrite(os.path.join(save_dir, "heatmap_{:d}.jpg".format(i)), (heatmap * 255).astype(np.int))
+
+        # register_gradient()
+        # guided_model = modify_backprop(model, 'GuidedBackProp')
+        # saliency_fn = compile_saliency_function(guided_model)
+        # saliency = saliency_fn([preprocessed_input, 0])
+        # gradcam = saliency[0] * heatmap[..., np.newaxis]
+        # cv2.imwrite("guided_gradcam.jpg", deprocess_image(gradcam))
