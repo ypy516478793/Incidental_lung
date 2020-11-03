@@ -220,7 +220,7 @@ class Vgg19():
         self.acc = tf.contrib.metrics.accuracy(labels=tf.argmax(self.labels, axis=-1),
                                                predictions=tf.argmax(self.prob, axis=-1))
         if istrain:
-            self.train_op = tf.train.GradientDescentOptimizer(learning_rate=0.001).minimize(self.total_loss)
+            self.train_op = tf.train.GradientDescentOptimizer(learning_rate=args.lr).minimize(self.total_loss)
 
     def build(self, rgb, train_mode=None):
         """
@@ -612,24 +612,24 @@ def get_args():
     parser.add_argument('--save_dir', type=str, help="directory of saved results", default="results/")
     parser.add_argument('--epochs', type=int, help='number of epochs', default=50)
     parser.add_argument('--batchsize', type=int, help='batch size', default=16)
-    parser.add_argument('--lr', type=float, help='learning rate', default=0.0005)
+    parser.add_argument('--lr', type=float, help='learning rate', default=0.001)
     parser.add_argument('--image_size', type=int, help='image size', default=224)
     parser.add_argument('--num_classes', type=int, help='number of classes', default=2)
     parser.add_argument('--l2norm_beta', type=float, help='beta for l2 norm on weights', default=0.001)
-    parser.add_argument('--train', type=eval, help='train or test', default=False)
+    parser.add_argument('--train', type=eval, help='train or test', default=True)
     parser.add_argument('--load_pretrain', type=eval, help='whether to load pretrained model on imagenet', default=True)
-    parser.add_argument('--augmentation', type=eval, help='whether to use image augmentation', default=False)
+    parser.add_argument('--augmentation', type=eval, help='whether to use image augmentation', default=True)
     parser.add_argument('--balance_option', type=str, help='before or after train_test_split',
                         choices=["before", "after"], default="after")
     parser.add_argument('--gpu', type=str, help='which gpu to use', default="0")
     parser.add_argument('--load_model', type=str, help='trained model to load',
                         # default="/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/privacy/VGG2D/results/bs_16.lr_0.001_copy/vgg19_epoch22.npy")
-                        # default="/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/privacy/VGG2D/results/bs_16.lr_0.0005.beta_0.001.aug.balanceBeforeSplit.best/vgg19_epoch37.npy")
-                        # default="/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/privacy/VGG2D/results/bs_16.lr_0.0005.beta_0.001.aug.balanceBeforeSplit/vgg19_epoch38.npy")
-                        # default="/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/privacy/VGG2D/results/bs_16.lr_0.0005.beta_0.001.aug.balanceAfterSplit.best/vgg19_epoch40.npy")
-                        default="/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/privacy/VGG2D/results/bs_16.lr_0.0005.beta_0.001.aug.balanceAfterSplit/vgg19_epoch37.npy")
-                        # default=None)
-    parser.add_argument('--extraStr', type=str, help='extraStr for saving', default="")
+                        # default="/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/privacy/VGG2D/results/bs_16.lr_0.001.beta_0.001.aug.balanceBeforeSplit.best/vgg19_epoch37.npy")
+                        # default="/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/privacy/VGG2D/results/bs_16.lr_0.001.beta_0.001.aug.balanceBeforeSplit/vgg19_epoch38.npy")
+                        # default="/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/privacy/VGG2D/results/bs_16.lr_0.001.beta_0.001.aug.balanceAfterSplit.best/vgg19_epoch40.npy")
+                        # default="/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/privacy/VGG2D/results/bs_16.lr_0.001.beta_0.001.aug.balanceAfterSplit/vgg19_epoch37.npy")
+                        default=None)
+    parser.add_argument('--extraStr', type=str, help='extraStr for saving', default="exp2")
     args = parser.parse_args()
     return args
 
