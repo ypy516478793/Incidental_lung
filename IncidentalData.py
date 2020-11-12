@@ -313,9 +313,9 @@ if __name__ == '__main__':
     # rootFolder = "/Users/yuan_pengyu/Downloads/IncidentalLungCTs_sample/"
     rootFolder = "data/"
     pos_label_file = "data/pos_labels.csv"
-    cat_label_file = "data/Lung Nodule Clinical Data_Min Kim (No name).xlsx"
+    cat_label_file = "data/Lung Nodule Clinical Data_Min Kim - Added Variables 10-2-2020.xlsx"
     cube_size = 64
-    lungData = LungDataset(rootFolder, labeled_only=True, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
+    lungData = LungDataset(rootFolder, labeled_only=False, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
                            cube_size=cube_size, reload=False, train=None, screen=False)
     # image, new_image = lungData.load_image(0)
     # img = new_image[100]
