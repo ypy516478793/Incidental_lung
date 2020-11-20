@@ -3,3 +3,8 @@ identifiers.csv
 uids.csv
 data/
 classifier/model/
+brain_CT/
+breast_CT/
+classifier/scaler.pkl
+others/
+privacy/
