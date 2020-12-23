@@ -149,14 +149,43 @@ def load_from_dicom(root_dir, imageInfo, pos_df, labeled=True):
     print("-" * 30 + " CTinfo " + "-" * 30)
     [print(i) for i in imageInfo]
 
+def change_path(info_dir):
+    info_path = os.path.join(info_dir, "CTinfo.npz")
+    imageInfo = np.load(info_path, allow_pickle=True)["info"]
+    for info in imageInfo:
+        old_image_path = info["imagePath"]
+        image_path = old_image_path.replace("\\", "/")
+        s = image_path.find("Lung_patient")
+        new_image_path = os.path.join(root_dir, image_path[s:])
+        if new_image_path == old_image_path:
+            print("Do not need to change the image path.")
+            return imageInfo
+        assert os.path.exists(new_image_path), "{:s} does not exist!".format(new_image_path)
+        info["imagePath"] = new_image_path
+    os.rename(info_path, os.path.join(info_dir, "CTinfo_old.npz"))
+    np.savez_compressed(info_path, info=imageInfo)
+    return imageInfo
+
+
+def check_num_nodules(file = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/data/Dataset_details_0916.xlsx"):
+    df = pd.read_excel(file)
+    from ast import literal_eval
+    ids = [id for id, i in enumerate(df.iloc[:, 3]) if
+           i is not np.nan and isinstance(literal_eval(i), dict) and list(literal_eval(i).values())[0] > 1]
+    return ids
+
 if __name__ == '__main__':
     
-    root_dir = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/data_mamta/"
-    raw_data_dir = os.path.join(root_dir, "raw_data")
-    # pos_label_file = os.path.join(raw_data_dir, "pos_labels.csv")
-    # cat_label_file = "data/Lung Nodule Clinical Data_Min Kim - Added Variables 10-2-2020.xlsx"
-    # pos_df = pd.read_csv(pos_label_file, dtype={"date": str})
-    pos_df = None
-    imageInfo = []
-    
-    imageInfo = load_from_dicom(raw_data_dir, imageInfo, pos_df, labeled=False)
+    # root_dir = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/data_mamta/"
+    # raw_data_dir = os.path.join(root_dir, "raw_data")
+    # # pos_label_file = os.path.join(raw_data_dir, "pos_labels.csv")
+    # # cat_label_file = "data/Lung Nodule Clinical Data_Min Kim - Added Variables 10-2-2020.xlsx"
+    # # pos_df = pd.read_csv(pos_label_file, dtype={"date": str})
+    # pos_df = None
+    # imageInfo = []
+    #
+    # imageInfo = load_from_dicom(raw_data_dir, imageInfo, pos_df, labeled=False)
+
+    root_dir = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/data_king/labeled"
+    imageInfo = change_path(root_dir)
+    print("")

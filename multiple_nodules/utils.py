@@ -195,7 +195,6 @@ def lumTrans(img):
 
 # Standardize the pixel values
 def make_lungmask(img, display=False):
-    raw_img = np.copy(img)
     row_size = img.shape[0]
     col_size = img.shape[1]
 

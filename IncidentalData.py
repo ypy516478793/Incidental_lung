@@ -19,8 +19,8 @@ import os
 
 
 class LungDataset(Dataset):
-    def __init__(self, rootFolder, labeled_only=False, pos_label_file=None, cat_label_file=None, cube_size=64,
-                 reload=False, train=None, screen=True, clinical=False):
+    def __init__(self, rootFolder, pos_label_file=None, cat_label_file=None, cube_size=64,
+                 train=None, screen=True, clinical=False):
         self.imageInfo = []
         self._imageIds = []
         self.cube_size = cube_size
@@ -33,8 +33,8 @@ class LungDataset(Dataset):
             self.cats = self.cat_df[cat_key]
         self.clinical_preprocessing()
         self.load_clinical = clinical
-        self.matches = ["LUNG", "lung"]
-        self.load_lung(rootFolder, labeled_only, reload)
+        self.imageInfo = np.load(os.path.join(rootFolder, "CTinfo.npz"), allow_pickle=True)["info"]
+        self.imageInfo = np.array(self.imageInfo)
         # self.imageInfo = self.imageInfo[:3]
         if screen:
             self.screen()
@@ -49,132 +49,136 @@ class LungDataset(Dataset):
         if torch.is_tensor(imageId):
             imageId = imageId.tolist()
 
-        if self.load_clinical:
-            feature_clinical = self.get_clinical(imageId).astype(np.float32)
-        feature = self.get_cube(imageId, self.cube_size)
-
-        # feature = feature[np.newaxis, ...]
+        image = self.load_image(imageId)
+        pos = self.load_pos(imageId)
+        cubes = self.get_cube(imageId, self.cube_size)
         label = self.load_cat(imageId)
-        if len(feature) > 1:
-            assert label == 1, "Must be benign cases!"
-            feature = feature[[np.random.randint(len(feature))]]
+        # if len(feature) > 1:
+        #     assert label == 1, "Must be benign cases!"
+        #     feature = feature[[np.random.randint(len(feature))]]
+
+        # if self.load_clinical:
+        #     feature = (feature, feature_clinical)
+
+        sample = {"image": image,
+                  "pos": pos,
+                  "cubes": cubes,
+                  "label": label}
 
         if self.load_clinical:
-            feature = (feature, feature_clinical)
-
-        sample = {"features": feature,
-                  "label": label}
+            clinical = self.get_clinical(imageId).astype(np.float32)
+            sample = sample.update({"clinical": clinical})
 
         return sample
 
-    def add_scan(self, pstr, patientID, date, series, imgPath, sliceThickness, pixelSpacing, scanID, **kwargs):
-        '''
-        Add current scan meta information into global list
-        :param: meta information for current scan
-        :return: scan_info (in dictionary)
-        '''
-        scanInfo = {
-            "pstr": pstr,
-            "patientID": patientID,
-            "scanID": scanID,
-            "date": date,
-            "series": series,
-            "imagePath": imgPath,
-            "sliceThickness": sliceThickness,
-            "pixelSpacing": pixelSpacing,
-        }
-        scanInfo.update(kwargs)
-        self.imageInfo.append(scanInfo)
-        return scanInfo
+    # def add_scan(self, pstr, patientID, date, series, imgPath, sliceThickness, pixelSpacing, scanID, **kwargs):
+    #     '''
+    #     Add current scan meta information into global list
+    #     :param: meta information for current scan
+    #     :return: scan_info (in dictionary)
+    #     '''
+    #     scanInfo = {
+    #         "pstr": pstr,
+    #         "patientID": patientID,
+    #         "scanID": scanID,
+    #         "date": date,
+    #         "series": series,
+    #         "imagePath": imgPath,
+    #         "sliceThickness": sliceThickness,
+    #         "pixelSpacing": pixelSpacing,
+    #     }
+    #     scanInfo.update(kwargs)
+    #     self.imageInfo.append(scanInfo)
+    #     return scanInfo
+    #
+    # def load_from_dicom(self, rootFolder, labeled_only=True):
+    #     '''
+    #     load image from dicom files
+    #     :param rootFolder: root folder of the data
+    #     :return: None
+    #     '''
+    #     no_CTscans = []
+    #     matchMoreThanOne = []
+    #     all_patients = [i for i in os.listdir(rootFolder) if
+    #                     os.path.isdir(os.path.join(rootFolder, i)) and i[:4] == "Lung"]
+    #     all_patients = natsorted(all_patients)
+    #
+    #     # Loop over all patients
+    #     for i in range(len(all_patients)):
+    #         patientFolder = os.path.join(rootFolder, all_patients[i])
+    #         all_dates = [d for d in os.listdir(patientFolder) if
+    #                     os.path.isdir(os.path.join(patientFolder, d)) and d[-4:] == "data"]
+    #         # Loop over all dates
+    #         for j in range(len(all_dates)):
+    #             imgFolder = os.path.join(rootFolder, all_patients[i], all_dates[j])
+    #             pstr = all_patients[i].split("-")[0].split("_")[1]
+    #             dstr = all_dates[j].split("_")[0]
+    #             pID = all_patients[i].split("-")[1].split("_")[0]
+    #             imagePath = os.path.join(rootFolder, all_patients[i], "{:s}-{:s}.npz".format(pID, dstr))
+    #             if imagePath in [d["imagePath"] for d in self.imageInfo]:
+    #                 continue
+    #             # find series of only labeled data
+    #             if labeled_only:
+    #                 existId = (self.pos_df["patient"] == pstr) & (self.pos_df["date"] == dstr)
+    #                 if existId.sum() == 0:
+    #                     continue
+    #                 else:
+    #                     series = self.pos_df[existId]["series"].to_numpy()[0]
+    #                     if series == "Lung_Bone+ 50cm" or series == "LUNG_BONE PLUS 50cm":
+    #                         series = series.replace("_", "/")
+    #                     print("\n>>>>>>> Start to load {:s} at date {:s}".format(pstr, dstr))
+    #
+    #             # Distribute all slices to different series
+    #             patientID, dateDicom, seriesDict = load_dicom(imgFolder)
+    #             assert patientID == pID, "PatientID does not match!!"
+    #             assert dateDicom == dstr, "Date does not match!!"
+    #             print("All series types: ", list(seriesDict.keys()))
+    #
+    #             # find series of unlabeled data based on the matches pattern (self.matches)
+    #             if not labeled_only:
+    #                 lungSeries = [i for i in list(seriesDict.keys()) if np.any([m in i for m in self.matches])]
+    #                 if len(lungSeries) == 0:
+    #                     print("No lung scans found!")
+    #                     no_CTscans.append(seriesDict)
+    #                 else:
+    #                     if len(lungSeries) > 1:
+    #                         print("More than 1 lung scans found!")
+    #                         id = np.argmin([len(i) for i in lungSeries])
+    #                         series = lungSeries[id]
+    #                         matchMoreThanOne.append(lungSeries)
+    #                     else:
+    #                         series = lungSeries[0]
+    #                     print("Lung series: ", series)
+    #
+    #             # Load and save lung series
+    #             slices = seriesDict[series]
+    #             image, sliceThickness, pixelSpacing, scanID = read_slices(slices)
+    #             # imagePath = os.path.join(rootFolder, all_patients[i], "{:s}-{:s}.npz".format(patientID, dateDicom))
+    #             scanInfo = self.add_scan(pstr, patientID, dateDicom, series, imagePath,
+    #                                      sliceThickness, pixelSpacing, scanID)
+    #             new_image, new_spacing = resample_image(image, sliceThickness, pixelSpacing)
+    #             np.savez_compressed(imagePath, image=new_image, info=scanInfo)
+    #             print("Save scan to {:s}".format(imagePath))
+    #
+    #             print("\nFinish loading patient {:s} at date {:s} <<<<<<<".format(patientID, dateDicom))
+    #
+    #             CTinfoPath = os.path.join(rootFolder, "CTinfo.npz")
+    #             np.savez_compressed(CTinfoPath, info=self.imageInfo)
+    #             print("Save all scan infos to {:s}".format(CTinfoPath))
+    #
+    #     print("-" * 30 + " CTinfo " + "-" * 30)
+    #     [print(i) for i in self.imageInfo]
 
-    def load_from_dicom(self, rootFolder, labeled_only=True):
-        '''
-        load image from dicom files
-        :param rootFolder: root folder of the data
-        :return: None
-        '''
-        no_CTscans = []
-        matchMoreThanOne = []
-        all_patients = [i for i in os.listdir(rootFolder) if
-                        os.path.isdir(os.path.join(rootFolder, i)) and i[:4] == "Lung"]
-        all_patients = natsorted(all_patients)
-
-        # Loop over all patients
-        for i in range(len(all_patients)):
-            patientFolder = os.path.join(rootFolder, all_patients[i])
-            all_dates = [d for d in os.listdir(patientFolder) if
-                        os.path.isdir(os.path.join(patientFolder, d)) and d[-4:] == "data"]
-            # Loop over all dates
-            for j in range(len(all_dates)):
-                imgFolder = os.path.join(rootFolder, all_patients[i], all_dates[j])
-                pstr = all_patients[i].split("-")[0].split("_")[1]
-                dstr = all_dates[j].split("_")[0]
-                pID = all_patients[i].split("-")[1].split("_")[0]
-                imagePath = os.path.join(rootFolder, all_patients[i], "{:s}-{:s}.npz".format(pID, dstr))
-                if imagePath in [d["imagePath"] for d in self.imageInfo]:
-                    continue
-                # find series of only labeled data
-                if labeled_only:
-                    existId = (self.pos_df["patient"] == pstr) & (self.pos_df["date"] == dstr)
-                    if existId.sum() == 0:
-                        continue
-                    else:
-                        series = self.pos_df[existId]["series"].to_numpy()[0]
-                        if series == "Lung_Bone+ 50cm" or series == "LUNG_BONE PLUS 50cm":
-                            series = series.replace("_", "/")
-                        print("\n>>>>>>> Start to load {:s} at date {:s}".format(pstr, dstr))
-
-                # Distribute all slices to different series
-                patientID, dateDicom, seriesDict = load_dicom(imgFolder)
-                assert patientID == pID, "PatientID does not match!!"
-                assert dateDicom == dstr, "Date does not match!!"
-                print("All series types: ", list(seriesDict.keys()))
-
-                # find series of unlabeled data based on the matches pattern (self.matches)
-                if not labeled_only:
-                    lungSeries = [i for i in list(seriesDict.keys()) if np.any([m in i for m in self.matches])]
-                    if len(lungSeries) == 0:
-                        print("No lung scans found!")
-                        no_CTscans.append(seriesDict)
-                    else:
-                        if len(lungSeries) > 1:
-                            print("More than 1 lung scans found!")
-                            id = np.argmin([len(i) for i in lungSeries])
-                            series = lungSeries[id]
-                            matchMoreThanOne.append(lungSeries)
-                        else:
-                            series = lungSeries[0]
-                        print("Lung series: ", series)
-
-                # Load and save lung series
-                slices = seriesDict[series]
-                image, sliceThickness, pixelSpacing, scanID = read_slices(slices)
-                # imagePath = os.path.join(rootFolder, all_patients[i], "{:s}-{:s}.npz".format(patientID, dateDicom))
-                scanInfo = self.add_scan(pstr, patientID, dateDicom, series, imagePath,
-                                         sliceThickness, pixelSpacing, scanID)
-                new_image, new_spacing = resample_image(image, sliceThickness, pixelSpacing)
-                np.savez_compressed(imagePath, image=new_image, info=scanInfo)
-                print("Save scan to {:s}".format(imagePath))
-
-                print("\nFinish loading patient {:s} at date {:s} <<<<<<<".format(patientID, dateDicom))
-
-                CTinfoPath = os.path.join(rootFolder, "CTinfo.npz")
-                np.savez_compressed(CTinfoPath, info=self.imageInfo)
-                print("Save all scan infos to {:s}".format(CTinfoPath))
-
-        print("-" * 30 + " CTinfo " + "-" * 30)
-        [print(i) for i in self.imageInfo]
-
-    def load_lung(self, rootFolder, labeled_only, reload=False):
-        if reload:
-            self.imageInfo = np.load(os.path.join(rootFolder, "CTinfo.npz"), allow_pickle=True)["info"].tolist()
-            self.load_from_dicom(rootFolder, labeled_only=labeled_only)
-        else:
-            try:
-                self.imageInfo = np.load(os.path.join(rootFolder, "CTinfo.npz"), allow_pickle=True)["info"]
-            except FileNotFoundError:
-                self.load_from_dicom(rootFolder, labeled_only=labeled_only)
-        self.imageInfo = np.array(self.imageInfo)
+    # def load_lung(self, rootFolder, labeled_only, reload=False):
+    #     if reload:
+    #         self.imageInfo = np.load(os.path.join(rootFolder, "CTinfo.npz"), allow_pickle=True)["info"].tolist()
+    #         self.load_from_dicom(rootFolder, labeled_only=labeled_only)
+    #     else:
+    #         try:
+    #             self.imageInfo = np.load(os.path.join(rootFolder, "CTinfo.npz"), allow_pickle=True)["info"]
+    #         except FileNotFoundError:
+    #             self.load_from_dicom(rootFolder, labeled_only=labeled_only)
+    #     self.imageInfo = np.array(self.imageInfo)
 
     def load_subset(self, train):
         trainInfo, valInfo = train_test_split(self.imageInfo, random_state=42)
@@ -197,10 +201,23 @@ class LungDataset(Dataset):
         for imageId in range(num_images):
             pos = self.load_pos(imageId)
             cat = self.load_cat(imageId)
-            if len(pos) > 1 and cat == 0:
-            # if len(pos) > 1:
+            if len(pos) > 1:
+            # if len(pos) > 1 and cat == 0:
+            # if len(pos) <= 1:
                 mask[imageId] = False
         self.imageInfo = self.imageInfo[mask]
+
+    # def screen(self):
+    #     num_images = len(self.imageInfo)
+    #     mask = np.ones(num_images, dtype=bool)
+    #     for imageId in range(num_images):
+    #         pos = self.load_pos(imageId)
+    #         cat = self.load_cat(imageId)
+    #         if len(pos) > 1 and cat == 0:
+    #         # if len(pos) > 1:
+    #             mask[imageId] = False
+    #     self.imageInfo = self.imageInfo[mask]
+
 
     def clinical_preprocessing(self):
         dropCols = ["Sex"]
@@ -253,13 +270,16 @@ class LungDataset(Dataset):
         imgPath, thickness, spacing = imgInfo["imagePath"], imgInfo["sliceThickness"], imgInfo["pixelSpacing"]
         images = np.load(imgPath)["image"]
         images = lumTrans(images)
+
+        # masked = np.array([make_lungmask(i, display=True) for i in images])
+
         # if mask:
         #     masked_images = []
         #     for img in images:
         #         masked_images.append(make_lungmask(img))
         #     masked_images = np.stack(masked_images)
         # plt.imshow(images[10])
-        print("Images{:d} shape: ".format(imageId), images.shape)
+        # print("Images{:d} shape: ".format(imageId), images.shape)
 
         return images
 
@@ -311,17 +331,19 @@ class LungDataset(Dataset):
 
 if __name__ == '__main__':
     # rootFolder = "/Users/yuan_pengyu/Downloads/IncidentalLungCTs_sample/"
-    rootFolder = "data/"
+    # rootFolder = "data/"
+    rootFolder = "data_king/labeled/"
+    # rootFolder = "data_king/unlabeled/"
     pos_label_file = "data/pos_labels.csv"
     cat_label_file = "data/Lung Nodule Clinical Data_Min Kim - Added Variables 10-2-2020.xlsx"
     cube_size = 64
-    lungData = LungDataset(rootFolder, labeled_only=False, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
-                           cube_size=cube_size, reload=False, train=None, screen=False)
+    lungData = LungDataset(rootFolder, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
+                           cube_size=cube_size, train=None, screen=True, clinical=False)
     # image, new_image = lungData.load_image(0)
     # img = new_image[100]
     # make_lungmask(img, display=True)
 
-    # from prepare import show_nodules
+    # from prepare_lung import show_nodules
     # crop_size = 64
     # show_nodules(lungData, crop_size)
     #
@@ -344,8 +366,12 @@ if __name__ == '__main__':
     #     np.save(os.path.join(saveFolder, fileName + "_label.npy"), np.array([]))
     #     print("Save data_{:d} to {:s}".format(id, os.path.join(saveFolder, fileName + "_clean.npy")))
 
-
-
+    from torch.utils.data import DataLoader
+    from utils import collate
+    dataLoader = DataLoader(lungData, batch_size=2, drop_last=False, collate_fn=collate)
+    for sample in dataLoader:
+        image, cubes, label = sample["image"], sample["cubes"], sample["label"]
+        print("")
 
     print("")
 

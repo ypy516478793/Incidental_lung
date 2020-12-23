@@ -12,8 +12,10 @@ from tqdm import tqdm
 
 from classifier.resnet import generate_model
 
+from torch.utils.tensorboard import SummaryWriter
 import torch.optim as optim
 import torch.nn as nn
+import torchvision
 import torch
 
 import matplotlib.pyplot as plt
@@ -50,14 +52,22 @@ def train(trainLoader, testLoader, model, optimizer, scheduler, criterion, devic
         all_pred = []
         all_label = []
         for sample_batch in trainLoader:
-            x1, y1 = sample_batch["features"], sample_batch["label"]
+            x1, y1 = sample_batch["cubes"], sample_batch["label"]
             if isinstance(x1, list):
-                x1 = [x.float().to(device) for x in x1]
+                x1 = torch.from_numpy(np.array(x1).astype(np.float32)).to(device)
+                y1 = torch.from_numpy(np.array(y1).astype(np.int)).to(device)
+                # x1 = [x.float().to(device) for x in x1]
             else:
                 x1 = x1.float().to(device)
+
+            # cube_size = x1.shape[2]
+            # img_grid = torchvision.utils.make_grid(x1[:, :, cube_size // 2])
+            # writer.add_image("train_images", img_grid)
+            # writer.add_graph(model, x1)
+
             optimizer.zero_grad()
             p1 = model(x1)
-            loss = criterion(p1, y1.to(device))
+            loss = criterion(p1, y1)
             loss.backward()
 
             score = loss.cpu().detach().numpy()
@@ -69,6 +79,7 @@ def train(trainLoader, testLoader, model, optimizer, scheduler, criterion, devic
             optimizer.step()
 
             c1 = torch.argmax(p1, 1).cpu()
+            y1 = y1.cpu()
             total += y1.size(0)
             correct += (c1 == y1).sum().item()
             all_pred.append(c1.numpy())
@@ -87,10 +98,13 @@ def train(trainLoader, testLoader, model, optimizer, scheduler, criterion, devic
                              columns=[i for i in range(num_classes)])
         print("Train confusion matrix: ")
         print(df_cm)
-        plt.figure()
+        fig = plt.figure()
         sns.heatmap(df_cm, annot=True, cmap="YlGnBu")
         plt.savefig(os.path.join(plot_folder, "train_confusion_matrix_ep{:d}.png".format(epoch)), bbox_inches="tight", dpi=200)
         plt.close()
+
+        writer.add_scalar('Loss/train', score, epoch)
+        writer.add_scalar('Accuracy/train', acc, epoch)
 
         train_loss.append(score)
         train_acc.append(acc)
@@ -101,7 +115,7 @@ def train(trainLoader, testLoader, model, optimizer, scheduler, criterion, devic
         if testLoader:
             model.eval()
             # sample_batch = next(iter(testLoader))
-            # x2, y2 = sample_batch["features"].float(), sample_batch["label"]
+            # x2, y2 = sample_batch["cubes"].float(), sample_batch["label"]
             # p2 = model(x2.to(device))
             # loss = criterion(p2, y2.to(device))
             # score = loss.cpu().detach().numpy()
@@ -112,17 +126,20 @@ def train(trainLoader, testLoader, model, optimizer, scheduler, criterion, devic
             all_pred = []
             all_label = []
             for sample_batch in testLoader:
-                x2, y2 = sample_batch["features"], sample_batch["label"]
+                x2, y2 = sample_batch["cubes"], sample_batch["label"]
                 if isinstance(x2, list):
-                    x2 = [x.float().to(device) for x in x2]
+                    # x2 = [x.float().to(device) for x in x2]
+                    x2 = torch.from_numpy(np.array(x2).astype(np.float32)).to(device)
+                    y2 = torch.from_numpy(np.array(y2).astype(np.int)).to(device)
                 else:
                     x2 = x2.float().to(device)
                 optimizer.zero_grad()
                 p2 = model(x2)
-                loss = criterion(p2, y2.to(device))
+                loss = criterion(p2, y2)
                 loss.backward()
 
                 c2 = torch.argmax(p2, 1).cpu()
+                y2 = y2.cpu()
                 total += y2.size(0)
                 correct += (c2 == y2).sum().item()
                 scores.append(loss.cpu().detach().numpy())
@@ -149,6 +166,10 @@ def train(trainLoader, testLoader, model, optimizer, scheduler, criterion, devic
             # print("epoch {:d}, test loss {:.6f}".format(epoch, score))
             print("epoch {:d} | avg test loss {:.6f} | avg test acc {:.2f}".format(
                 epoch, score, acc))
+
+            writer.add_scalar('Loss/test', score, epoch)
+            writer.add_scalar('Accuracy/test', acc, epoch)
+
             test_loss.append(score)
             test_acc.append(acc)
             test_step.append(step)
@@ -202,17 +223,21 @@ def test(testLoader, model, device, criterion, model_folder, save_folder):
     total = 0
     all_pred = []
     all_label = []
-    for sample_batch in testLoader:
-        x2, y2 = sample_batch["features"], sample_batch["label"]
+    for sample_batch in tqdm(testLoader):
+        x2, y2 = sample_batch["cubes"], sample_batch["label"]
         if isinstance(x2, list):
-            x2 = [x.float().to(device) for x in x2]
+            # x2 = [x.float().to(device) for x in x2]
+            x2 = torch.from_numpy(np.array(x2).astype(np.float32)).to(device)
+            y2 = torch.from_numpy(np.array(y2).astype(np.int)).to(device)
         else:
             x2 = x2.float().to(device)
+            y2 = y2.to(device)
         p2 = model(x2)
-        loss = criterion(p2, y2.to(device))
+        loss = criterion(p2, y2)
         loss.backward()
 
         c2 = torch.argmax(p2, 1).cpu()
+        y2 = y2.cpu()
         total += y2.size(0)
         correct += (c2 == y2).sum().item()
         scores.append(loss.cpu().detach().numpy())
@@ -242,22 +267,122 @@ def test(testLoader, model, device, criterion, model_folder, save_folder):
         epoch, score, acc))
 
 
+    # auc_score = roc_auc_score(labels_test[:, 0], probs_test[:, 0])
+    # print("test loss {:.2f} | test acc {:.4f} | auc score {:.4f}".format(
+    #     loss_test, acc_test, auc_score))
+    #
+    # all_label = np.argmax(labels_test, axis=-1)
+    # all_pred = np.argmax(probs_test, axis=-1)
+    #
+    #
+    # fpr, tpr, ths = roc_curve(labels_test[:, 0], probs_test[:, 0])
+    # roc_auc = auc(fpr, tpr)
+    # plt.figure()
+    # lw = 2
+    # plt.plot(fpr, tpr, color='darkorange',
+    #          lw=lw, label='ROC curve (area = %0.2f)' % roc_auc)
+    # plt.plot([0, 1], [0, 1], color='navy', lw=lw, linestyle='--')
+    # plt.xlim([0.0, 1.0])
+    # plt.ylim([0.0, 1.05])
+    # plt.xlabel('False Positive Rate')
+    # plt.ylabel('True Positive Rate')
+    # plt.title('Receiver operating characteristic example')
+    # plt.legend(loc="lower right")
+    # plt.savefig(os.path.join(model_dir, "roc_curve.png"), bbox_inches="tight", dpi=200)
+    # plt.close()
+    #
+    # # optimal_idx = np.argmax(tpr - fpr)
+    # # optimal_threshold = ths[optimal_idx]
+    #
+    # confMat = confusion_matrix(all_label, all_pred)
+    # df_cm = pd.DataFrame(confMat, index=["maligant", "benign"],
+    #                      columns=["maligant", "benign"])
+    # print("Test confusion matrix with th_0.5:")
+    # print(df_cm)
+    # plt.figure()
+    # # sns.heatmap(df_cm, annot=True, cmap="YlGnBu")
+    # sns.heatmap(df_cm, annot=True, cmap="Blues")
+    # plt.xlabel("Predicted label")
+    # plt.ylabel("True label")
+    # plt.title("Confusion matrix")
+    # plt.savefig(os.path.join(model_dir, "test_confusion_matrix_th_0.5.png"), bbox_inches="tight", dpi=200)
+    # plt.close()
+    #
+    #
+    # optimal_idx = np.argmax(tpr - fpr)
+    # optimal_threshold = ths[optimal_idx]
+    # all_pred_new = 1 - (probs_test[:, 0] >= optimal_threshold).astype(np.int)
+    # confMat = confusion_matrix(all_label, all_pred_new)
+    # df_cm = pd.DataFrame(confMat, index=["maligant", "benign"],
+    #                      columns=["maligant", "benign"])
+    # from sklearn.metrics import classification_report
+    # print("Classification report with th_{:f}: ".format(optimal_threshold))
+    # print(classification_report(all_label, all_pred_new))
+    # print("Test confusion matrix with th_{:f}: ".format(optimal_threshold))
+    # print(df_cm)
+    # plt.figure()
+    # # sns.heatmap(df_cm, annot=True, cmap="YlGnBu")
+    # sns.heatmap(df_cm, annot=True, cmap="Blues")
+    # plt.xlabel("Predicted label")
+    # plt.ylabel("True label")
+    # plt.title("Confusion matrix")
+    # plt.savefig(os.path.join(model_dir, "test_confusion_matrix_th_{:.3f}.png".format(optimal_threshold)),
+    #             bbox_inches="tight", dpi=200)
+    # plt.close()
+    #
+    #
+    # select_th = ths[np.argmax(tpr >= 0.8)]
+    # all_pred_new = 1 - (probs_test[:, 0] >= select_th).astype(np.int)
+    # confMat = confusion_matrix(all_label, all_pred_new)
+    # df_cm = pd.DataFrame(confMat, index=["maligant", "benign"],
+    #                      columns=["maligant", "benign"])
+    # from sklearn.metrics import classification_report
+    # print("Classification report with th_{:f}: ".format(select_th))
+    # print(classification_report(all_label, all_pred_new))
+    # print("Test confusion matrix with th_{:f}: ".format(select_th))
+    # print(df_cm)
+    # plt.figure()
+    # # sns.heatmap(df_cm, annot=True, cmap="YlGnBu")
+    # sns.heatmap(df_cm, annot=True, cmap="Blues")
+    # plt.xlabel("Predicted label")
+    # plt.ylabel("True label")
+    # plt.title("Confusion matrix")
+    # plt.savefig(os.path.join(model_dir, "test_confusion_matrix_th_{:.3f}.png".format(select_th)),
+    #             bbox_inches="tight", dpi=200)
+    # plt.close()
+    #
+    #
+    # average_precision = average_precision_score(labels_test[:, 0], probs_test[:, 0])
+    # precision, recall, thresholds = precision_recall_curve(labels_test[:, 0], probs_test[:, 0])
+    # plt.figure()
+    # plt.plot(recall, precision, label='precision-recall curve (AP = %0.2f)' % average_precision)
+    # plt.xlim([0.0, 1.05])
+    # plt.ylim([0.0, 1.05])
+    # plt.xlabel('Recall')
+    # plt.ylabel('Precision')
+    # plt.title('Precision-recall curve')
+    # plt.legend(loc="lower left")
+    # plt.savefig(os.path.join(model_dir, "precision_recall_curve.png"), bbox_inches="tight", dpi=200)
+    # plt.close()
+
+
 def main():
 
-    Train = True
-    use_clinical_features = True
-    rootFolder = "../data/"
+    Train = False
+    use_clinical_features = False
+    rootFolder = "../data_king/labeled"
     pos_label_file = "../data/pos_labels.csv"
     cat_label_file = "../data/Lung Nodule Clinical Data_Min Kim - Added Variables 10-2-2020.xlsx"
     load_model_folder = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/classifier/model/classification_LUNA16/Resnet18_Adam_lr0.001"
     cube_size = 64
-    trainData = LungDataset(rootFolder, labeled_only=True, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
-                            cube_size=cube_size, reload=False, train=True, clinical=use_clinical_features)
+    trainData = LungDataset(rootFolder, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
+                           cube_size=cube_size, train=True, screen=True, clinical=use_clinical_features)
     # trainData = LUNA16(train=True)
-    trainLoader = DataLoader(trainData, batch_size=3, shuffle=True)
+    from utils import collate
+    trainLoader = DataLoader(trainData, batch_size=3, shuffle=True, collate_fn=collate)
 
-    valData = LungDataset(rootFolder, labeled_only=True, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
-                          cube_size=cube_size, reload=False, train=False, clinical=use_clinical_features)
+    valData = LungDataset(rootFolder, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
+                          cube_size=cube_size, train=False, screen=True, clinical=use_clinical_features)
     # valData = LUNA16(train=False)
     valLoader = DataLoader(valData, batch_size=1, shuffle=False)
 
@@ -284,7 +409,8 @@ def main():
     # print("Shape of test_x is: ", test_x.shape)
 
     modelName = "Resnet18"
-    extra_str = "SGD_lr0.001"
+    extra_str = ""
+    # extra_str = "SGD_lr0.001"
     # extra_str = "Adam_lr0.001_augment"
     # extra_str = "Adam_lr0.001"
     # extra_str = "Test_for_incidental_48_all"
@@ -295,7 +421,8 @@ def main():
     print("Use model: {:s}".format(modelName))
     # model_folder = "model/classification_negMultiple/"
     # model_folder = "model/classification_LUNA16/"
-    model_folder = "model/classification_169patients/"
+    # model_folder = "model/classification_169patients/"
+    model_folder = "model/kim_labeled_169/"
     model_folder += "{:s}_{:s}".format(modelName, extra_str)
     os.makedirs(model_folder, exist_ok=True)
 
@@ -314,6 +441,9 @@ def main():
     # optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=0.1)
     # optimizer = optim.Adam(model.parameters(), lr=0.001)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, cooldown=10, min_lr=0.0001, patience=100)
+
+    global writer
+    writer = SummaryWriter(os.path.join(model_folder, "run"))
 
     # scaler = RobustScaler()
     # train_x = scaler.fit_transform(train_x)
