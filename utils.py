@@ -125,7 +125,7 @@ def plot_bbox(images, label, savedir, show=True):
         ax.imshow(images, cmap="gray")
     else:
         x, y, z, d = label
-        ax.imshow(images[int(z)], cmap="gray")
+        ax.imshow(images[round(z)], cmap="gray")
     rect = patches.Rectangle((x - d / 2, y - d / 2), d, d, linewidth=1, edgecolor='r', facecolor='none')
     ax.add_patch(rect)
     if show:
