@@ -88,12 +88,22 @@ def load_dicom(imgFolder):
 
     return patientID, date, seriesDict
 
-def resample_pos(label, thickness, spacing, new_spacing=[1, 1, 1]):
+def resample_pos(label, thickness, spacing, new_spacing=[1, 1, 1], imgshape=None):
+    """
+    :param label: (x, y, z, d) in original resolution
+    :param thickness: float z
+    :param spacing: original resolution, list [y, x]
+    :param new_spacing: new resolution, list [z, y, x]
+    :param imgshape: tuple, (#z, #y, #x)
+    :return:
+    """
     spacing = map(float, ([thickness] + list(spacing)))
     spacing = np.array(list(spacing))
     resize_factor = spacing / new_spacing
+    orishape = np.round(imgshape / resize_factor)
+    resize_factor = (np.array(imgshape) - 1) / (orishape - 1)
     resize_factor = resize_factor[::-1]
-    label[:3] = np.round(label[:3] * resize_factor)
+    label[:3] = np.round(label[:3] * resize_factor).astype(np.int)
     label[3] = label[3] * resize_factor[1]
 
     return label
@@ -125,7 +135,7 @@ def plot_bbox(images, label, savedir, show=True):
         ax.imshow(images, cmap="gray")
     else:
         x, y, z, d = label
-        ax.imshow(images[round(z)], cmap="gray")
+        ax.imshow(images[int(round(z))], cmap="gray")
     rect = patches.Rectangle((x - d / 2, y - d / 2), d, d, linewidth=1, edgecolor='r', facecolor='none')
     ax.add_patch(rect)
     if show:
