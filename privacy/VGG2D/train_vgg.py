@@ -1,4 +1,4 @@
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, KFold
 from sklearn.metrics import average_precision_score
 from sklearn.metrics import precision_recall_curve
 from sklearn.metrics import confusion_matrix
@@ -59,13 +59,13 @@ class DataGenerator():
         return batch_X, batch_y
 
 class IncidentalData():
-    def __init__(self, data_dir, image_size, num_classes):
+    def __init__(self, data_dir, image_size, num_classes, kfold=None, splitId=None):
         self.data_dir = data_dir
         self.image_size = image_size
         self.num_classes = num_classes
         self.load_data()
         # self.balance_data()
-        self.split_data()
+        self.split_data(kfold, splitId)
 
     def balance_any_data(self, X, y):
         size_all_cls = y.sum(axis=0)
@@ -84,12 +84,21 @@ class IncidentalData():
         y = y[resampled_ids]
         return X, y
 
-    def split_data(self):
+    def split_data(self, kfold=None, splitId=None):
         if args.balance_option == "before":
             self.X, self.y = self.balance_any_data(self.X, self.y)
         self.X = self.X[..., np.newaxis] / 255.0
         self.X = np.repeat(self.X, 3, axis=-1)
-        X_train, X_test, y_train, y_test = train_test_split(self.X, self.y, test_size=0.2, random_state=42)
+        if kfold is None:
+            X_train, X_test, y_train, y_test = train_test_split(self.X, self.y, test_size=0.2, random_state=42)
+        else:
+            assert splitId is not None
+            all_indices = np.arange(len(self.X))
+            kf_indices = [(train_index, val_index) for train_index, val_index in kfold.split(all_indices)]
+            train_index, val_index = kf_indices[splitId]
+            X_train, X_test = self.X[train_index], self.X[val_index]
+            y_train, y_test = self.y[train_index], self.y[val_index]
+
         if args.balance_option == "after":
             X_train, y_train = self.balance_any_data(X_train, y_train)
         self.train_data = (X_train, y_train)
@@ -473,6 +482,8 @@ def test(test_loader, model, sess, model_dir):
     print("test loss {:.2f} | test acc {:.4f} | auc score {:.4f}".format(
         loss_test, acc_test, auc_score))
 
+    np.savez_compressed(os.path.join(model_dir, "preds.npz"),
+                        l=labels_test, p=probs_test)
     all_label = np.argmax(labels_test, axis=-1)
     all_pred = np.argmax(probs_test, axis=-1)
 
@@ -568,7 +579,11 @@ def test(test_loader, model, sess, model_dir):
     plt.close()
 
 def main():
-    dataset = IncidentalData(args.data_dir, args.image_size, args.num_classes)
+    if args.kfold is not None:
+        kfold = KFold(n_splits=args.kfold, random_state=42)
+    else:
+        kfold = None
+    dataset = IncidentalData(args.data_dir, args.image_size, args.num_classes, kfold=kfold, splitId=args.splitId)
 
     train_loader = DataGenerator(dataset.train_data, args.batchsize, train=True)
     test_loader = DataGenerator(dataset.test_data, batch_size=len(dataset.test_data[0]), train=False)
@@ -576,6 +591,11 @@ def main():
     imagenet_pretrain = False
     if args.load_model:
         load_path = args.load_model
+        if os.path.isdir(load_path):
+            model_list = [m for m in os.listdir(load_path) if m.endswith(".npy") and m[:5] == "vgg19"]
+            from natsort import natsorted
+            latest_model = natsorted(model_list)[-1]
+            load_path = os.path.join(load_path, latest_model)
     elif args.load_pretrain:
         load_path = "vgg19.npy"
         imagenet_pretrain = True
@@ -592,6 +612,8 @@ def main():
         model_name += ".balanceBeforeSplit"
     elif args.balance_option == "after":
         model_name += ".balanceAfterSplit"
+    if args.kfold:
+        model_name += ".kfold{:d}".format(args.splitId)
     if args.extraStr: model_name += '.' + args.extraStr
     model_dir = os.path.join(save_dir, model_name)
     os.makedirs(model_dir, exist_ok=True)
@@ -616,20 +638,23 @@ def get_args():
     parser.add_argument('--image_size', type=int, help='image size', default=224)
     parser.add_argument('--num_classes', type=int, help='number of classes', default=2)
     parser.add_argument('--l2norm_beta', type=float, help='beta for l2 norm on weights', default=0.001)
-    parser.add_argument('--train', type=eval, help='train or test', default=True)
+    parser.add_argument('--train', type=eval, help='train or test', default=False)
     parser.add_argument('--load_pretrain', type=eval, help='whether to load pretrained model on imagenet', default=True)
     parser.add_argument('--augmentation', type=eval, help='whether to use image augmentation', default=True)
     parser.add_argument('--balance_option', type=str, help='before or after train_test_split',
                         choices=["before", "after"], default="after")
-    parser.add_argument('--gpu', type=str, help='which gpu to use', default="0")
+    parser.add_argument('--gpu', type=str, help='which gpu to use', default="7")
+    parser.add_argument('--kfold', type=int, help='number of kfold', default=None)
+    parser.add_argument('--splitId', type=int, help='kfold split idx', default=None)
     parser.add_argument('--load_model', type=str, help='trained model to load',
                         # default="/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/privacy/VGG2D/results/bs_16.lr_0.001_copy/vgg19_epoch22.npy")
                         # default="/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/privacy/VGG2D/results/bs_16.lr_0.001.beta_0.001.aug.balanceBeforeSplit.best/vgg19_epoch37.npy")
                         # default="/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/privacy/VGG2D/results/bs_16.lr_0.001.beta_0.001.aug.balanceBeforeSplit/vgg19_epoch38.npy")
                         # default="/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/privacy/VGG2D/results/bs_16.lr_0.001.beta_0.001.aug.balanceAfterSplit.best/vgg19_epoch40.npy")
                         # default="/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/privacy/VGG2D/results/bs_16.lr_0.001.beta_0.001.aug.balanceAfterSplit/vgg19_epoch37.npy")
+                        # default="/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/privacy/VGG2D/results/bs_16.lr_0.001.beta_0.001.aug.balanceAfterSplit.exp2/vgg19_epoch24.npy")
                         default=None)
-    parser.add_argument('--extraStr', type=str, help='extraStr for saving', default="exp2")
+    parser.add_argument('--extraStr', type=str, help='extraStr for saving', default="")
     args = parser.parse_args()
     return args
 
