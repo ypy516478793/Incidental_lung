@@ -256,6 +256,7 @@ class LungDataset(Dataset):
         dstr = imgInfo["date"]
         existId = (self.pos_df["patient"] == pstr) & (self.pos_df["date"] == dstr)
         pos = self.pos_df[existId][["x", "y", "z", "d"]].values
+        pos[:, 2] = pos[:, 2] - 1
         pos = np.array([resample_pos(p, thickness, spacing) for p in pos])
 
         return pos

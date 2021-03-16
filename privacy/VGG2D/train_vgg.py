@@ -395,6 +395,7 @@ def train(train_loader, val_loader, model, sess, model_dir):
     train_losses, val_losses = [], []
     train_accs, val_accs = [], []
     best_auc_score = -np.inf
+    best_val_loss = np.inf
     best_acc = 0
     for e in range(args.epochs):
         n_batchs = train_loader.num_batches
@@ -423,10 +424,12 @@ def train(train_loader, val_loader, model, sess, model_dir):
         print("epoch {:3d} | validation loss {:.2f} | validation acc {:.4f} | auc score {:.4f}".format(
               e, loss_val, acc_val, auc_score))
 
-        if auc_score > best_auc_score or (auc_score == best_auc_score and val_accs > best_acc):
+        # if auc_score > best_auc_score or (auc_score == best_auc_score and val_accs > best_acc):
+        if loss_val < best_val_loss or (loss_val == best_val_loss and val_accs > best_acc):
             save_path = os.path.join(model_dir, "vgg19_epoch{:d}.npy".format(e))
             model.save_npy(sess, save_path)
             best_auc_score = auc_score
+            best_val_loss = loss_val
             best_acc = val_accs
 
     print("Training process finished!")
