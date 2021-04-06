@@ -91,19 +91,24 @@ def create_gt_csv(folder, annot_file):
     labels = []
     for i in range(len(annotations)):
         patient_obj = annotations.iloc[i]
-        annot_list = patient_obj["imgName"].split("-", 2)
-        pstr, dstr = annot_list[:2]
-        dstr = dstr[4:] + dstr[:4]
-        imgName_list = annot_list[2].split(".")
-        Series = imgName_list[1]
-        z, Z = [int(j) for j in imgName_list[-2][4:].split("_")]
+        annot_list = patient_obj["imgName"].split("_")
+        if len(annot_list) == 5:
+            pstr, mrn, dstr, nodule_idx, z = annot_list
+        else:
+            pstr, mrn, dstr, pet, nodule_idx, z = annot_list
+        # imgName_list = annot_list[2].split(".")
+        # Series = imgName_list[1]
+        # z, Z = [int(j) for j in imgName_list[-2][4:].split("_")]
+        Series = "Unknown"
+        z = z.strip("z.png")
         x = patient_obj["x"] + patient_obj["w"] / 2
         y = patient_obj["y"] + patient_obj["h"] / 2
-        d = np.sqrt(np.power(patient_obj["w"], 2) + np.power(patient_obj["h"], 2))
+        # d = np.sqrt(np.power(patient_obj["w"], 2) + np.power(patient_obj["h"], 2))
+        d = np.max([patient_obj["w"], patient_obj["h"]])
         labels.append((pstr, dstr, Series, x, y, z, d))
     columns = ["patient", "date", "series", "x", "y", "z", "d"]
     label_df = pd.DataFrame(labels, columns=columns)
-    label_df.to_csv(os.path.join(folder, "gt_labels.csv"), index=False)
+    label_df.to_csv(os.path.join(folder, "gt_labels_0405.csv"), index=False)
 
 def move_back_npz(root_folder):
     npz_folder = os.path.join(root_folder, "processed_data")
@@ -239,13 +244,15 @@ def prepare_for_detector(rootFolder, saveFolder="Detector_data"):
 
 if __name__ == '__main__':
     # root_folder = "I:\Lung_ai"
-    root_folder = "data/"
+    # root_folder = "data/"
 
     # Kim_report = "Lung Nodule Clinical Data_Min Kim (Autosaved).xlsx"
     # organize_screenshots(root_folder, Kim_report)
 
-    # makesense_annots = "labels_lung_ai_20200805015042.csv"
-    # create_gt_csv(root_folder, makesense_annots)
+    root_folder = "../new_labels/"
+    # makesense_annots = "labels_my-project-name_2021-03-14-09-42-56.csv"
+    makesense_annots = "labels_my-project-name_2021-04-05-03-47-10.csv"
+    create_gt_csv(root_folder, makesense_annots)
 
     # gt_label = "gt_labels.csv"
     # extract_cube(root_folder, gt_label)
@@ -256,4 +263,4 @@ if __name__ == '__main__':
     # create_dataset_details(root_folder)
     # find_unused_benign(root_folder)
 
-    prepare_for_detector(root_folder)
+    # prepare_for_detector(root_folder)

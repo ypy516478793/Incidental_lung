@@ -332,92 +332,92 @@ class LungDataset(Dataset):
 
 
 if __name__ == '__main__':
-    # rootFolder = "/Users/yuan_pengyu/Downloads/IncidentalLungCTs_sample/"
-    # rootFolder = "data/"
-    rootFolder = "data_king/labeled/"
-    # rootFolder = "data_king/unlabeled/"
-    pos_label_file = "data/pos_labels.csv"
-    cat_label_file = "data/Lung Nodule Clinical Data_Min Kim - Added Variables 10-2-2020.xlsx"
-    cube_size = 64
-    lungData = LungDataset(rootFolder, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
-                           cube_size=cube_size, train=None, screen=False, clinical=False)
-    # image, new_image = lungData.load_image(0)
-    # img = new_image[100]
-    # make_lungmask(img, display=True)
-
-    # from prepare_lung import show_nodules
-    # crop_size = 64
-    # show_nodules(lungData, crop_size)
-    #
-    # lungData_test = LungDataset(rootFolder, labeled_only=True, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
-    #                        cube_size=cube_size, reload=False, train=False)
-    # crop_size = 64
-    # show_nodules(lungData_test, crop_size, train=False)
-
-
-
-    # saveFolder = "./data/"
-    # for id in tqdm(lungData.imageIds):
-    #     image, new_image = lungData.load_image(id)
-    #     masked_lung = []
-    #     for img in new_image:
-    #         masked_lung.append(make_lungmask(img))
-    #     masked_lung = np.array(masked_lung)
-    #     fileName = "CT_scan_{:d}".format(id)
-    #     np.save(os.path.join(saveFolder, fileName + "_clean.npy"), masked_lung)
-    #     np.save(os.path.join(saveFolder, fileName + "_label.npy"), np.array([]))
-    #     print("Save data_{:d} to {:s}".format(id, os.path.join(saveFolder, fileName + "_clean.npy")))
-
-    from torch.utils.data import DataLoader
-    from utils import collate
-    dataLoader = DataLoader(lungData, batch_size=2, drop_last=False, collate_fn=collate)
-    for sample in dataLoader:
-        image, cubes, label = sample["image"], sample["cubes"], sample["label"]
-        print("")
-
-    print("")
-
-    # ## --------------- mannually check labels --------------- ##
+    # # rootFolder = "/Users/yuan_pengyu/Downloads/IncidentalLungCTs_sample/"
+    # # rootFolder = "data/"
     # rootFolder = "data_king/labeled/"
+    # # rootFolder = "data_king/unlabeled/"
     # pos_label_file = "data/pos_labels.csv"
     # cat_label_file = "data/Lung Nodule Clinical Data_Min Kim - Added Variables 10-2-2020.xlsx"
     # cube_size = 64
     # lungData = LungDataset(rootFolder, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
     #                        cube_size=cube_size, train=None, screen=False, clinical=False)
-    # lungData.pos_df2 = pd.read_excel("data_king/gt_labels_checklist.xlsx", sheet_name="confident_labels_checklist",
-    #                                  skiprows=1, dtype={"date": str})
-    # from utils import plot_bbox
-    # def plot_individual_nodule(i, nodule_idx=0, new_d=None, new_loc=None):
-    #     imgs = lungData.load_image(i)
-    #     imgInfo = lungData.imageInfo[i]
-    #     for k, v in imgInfo.items():
-    #         print(k, ": ", v)
-    #     thickness, spacing = imgInfo["sliceThickness"], imgInfo["pixelSpacing"]
-    #     pstr = imgInfo["pstr"]
-    #     dstr = imgInfo["date"]
-    #     existId = (lungData.pos_df["patient"] == pstr) & (lungData.pos_df["date"] == dstr)
-    #     pos = lungData.pos_df[existId][["x", "y", "z", "d"]].values
-    #     print("len of pos: ", len(pos))
-    #     if new_d is not None: pos[nodule_idx, 3] = new_d
-    #     if new_loc is not None: pos[nodule_idx, :3] = new_loc
-    #     pos[:, 2] = pos[:, 2] - 1
-    #     print("original pos: ")
-    #     print(np.array2string(pos, separator=', '))
-    #     pos = np.array([resample_pos(p, thickness, spacing, imgshape=imgs.shape) for p in pos])
-    #     print("isotropic pos: ")
-    #     print(np.array2string(pos, separator=', '))
+    # # image, new_image = lungData.load_image(0)
+    # # img = new_image[100]
+    # # make_lungmask(img, display=True)
     #
-    #     existId = (lungData.pos_df2["Patient\n Index"] == pstr) & (lungData.pos_df2["date"] == dstr)
-    #     pos2 = lungData.pos_df2[existId][["x", "y", "z", "d"]].values
-    #     print("original pos from new labels: ")
-    #     print(np.array2string(pos2, separator=', '))
-    #     size = lungData.pos_df2[existId]["size(mm)"].values
-    #     print("real size: ", size)
-    #     plot_bbox(imgs, pos[nodule_idx], None)
+    # # from prepare_lung import show_nodules
+    # # crop_size = 64
+    # # show_nodules(lungData, crop_size)
+    # #
+    # # lungData_test = LungDataset(rootFolder, labeled_only=True, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
+    # #                        cube_size=cube_size, reload=False, train=False)
+    # # crop_size = 64
+    # # show_nodules(lungData_test, crop_size, train=False)
     #
-    #     return imgs, pos[nodule_idx]
     #
-    # a, b = plot_individual_nodule(63, nodule_idx=1, new_d=None, new_loc=None)
+    #
+    # # saveFolder = "./data/"
+    # # for id in tqdm(lungData.imageIds):
+    # #     image, new_image = lungData.load_image(id)
+    # #     masked_lung = []
+    # #     for img in new_image:
+    # #         masked_lung.append(make_lungmask(img))
+    # #     masked_lung = np.array(masked_lung)
+    # #     fileName = "CT_scan_{:d}".format(id)
+    # #     np.save(os.path.join(saveFolder, fileName + "_clean.npy"), masked_lung)
+    # #     np.save(os.path.join(saveFolder, fileName + "_label.npy"), np.array([]))
+    # #     print("Save data_{:d} to {:s}".format(id, os.path.join(saveFolder, fileName + "_clean.npy")))
+    #
+    # from torch.utils.data import DataLoader
+    # from utils import collate
+    # dataLoader = DataLoader(lungData, batch_size=2, drop_last=False, collate_fn=collate)
+    # for sample in dataLoader:
+    #     image, cubes, label = sample["image"], sample["cubes"], sample["label"]
+    #     print("")
+    #
+    # print("")
+
+    # ## --------------- mannually check labels --------------- ##
+    rootFolder = "data_king/labeled/"
+    pos_label_file = "data/pos_labels.csv"
+    cat_label_file = "data/Lung Nodule Clinical Data_Min Kim - Added Variables 10-2-2020.xlsx"
+    cube_size = 64
+    lungData = LungDataset(rootFolder, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
+                           cube_size=cube_size, train=None, screen=False, clinical=False)
+    lungData.pos_df2 = pd.read_excel("data_king/gt_labels_checklist.xlsx", sheet_name="confident_labels_checklist",
+                                     skiprows=1, dtype={"date": str})
+    from utils import plot_bbox
+    def plot_individual_nodule(i, nodule_idx=0, new_d=None, new_loc=None):
+        imgs = lungData.load_image(i)
+        imgInfo = lungData.imageInfo[i]
+        for k, v in imgInfo.items():
+            print(k, ": ", v)
+        thickness, spacing = imgInfo["sliceThickness"], imgInfo["pixelSpacing"]
+        pstr = imgInfo["pstr"]
+        dstr = imgInfo["date"]
+        existId = (lungData.pos_df["patient"] == pstr) & (lungData.pos_df["date"] == dstr)
+        pos = lungData.pos_df[existId][["x", "y", "z", "d"]].values
+        print("len of pos: ", len(pos))
+        if new_d is not None: pos[nodule_idx, 3] = new_d
+        if new_loc is not None: pos[nodule_idx, :3] = new_loc
+        pos[:, 2] = pos[:, 2] - 1
+        print("original pos: ")
+        print(np.array2string(pos, separator=', '))
+        pos = np.array([resample_pos(p, thickness, spacing, imgshape=imgs.shape) for p in pos])
+        print("isotropic pos: ")
+        print(np.array2string(pos, separator=', '))
+
+        existId = (lungData.pos_df2["Patient\n Index"] == pstr) & (lungData.pos_df2["date"] == dstr)
+        pos2 = lungData.pos_df2[existId][["x", "y", "z", "d"]].values
+        print("original pos from new labels: ")
+        print(np.array2string(pos2, separator=', '))
+        size = lungData.pos_df2[existId]["size(mm)"].values
+        print("real size: ", size)
+        plot_bbox(imgs, pos[nodule_idx], None)
+
+        return imgs, pos[nodule_idx]
+
+    a, b = plot_individual_nodule(63, nodule_idx=1, new_d=None, new_loc=None)
 
 
     ## --------------- save central slices with original size --------------- ##

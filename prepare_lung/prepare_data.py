@@ -174,6 +174,23 @@ def check_num_nodules(file = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_
            i is not np.nan and isinstance(literal_eval(i), dict) and list(literal_eval(i).values())[0] > 1]
     return ids
 
+def move_npz(save_dir, data_folder):
+    from tqdm import tqdm
+    from shutil import copytree, copyfile
+    file = os.path.join(save_dir, "move_folder.csv")
+    with open(file, "r") as f:
+        lines = f.readlines()
+        for l in tqdm(lines):
+            src, dst = l.split(",")
+            src, dst = src.strip(), dst.strip()
+            src = os.path.join(data_folder, *src.replace("\\", "/").split("/")[-2:])
+            dst = os.path.join(save_dir, *dst.replace("\\", "/").split("/")[-2:])
+            if not os.path.exists(dst):
+                assert os.path.exists(src), "src {:} does not exist.".format(src)
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                copyfile(src.strip(), dst.strip())
+
+
 if __name__ == '__main__':
     
     # root_dir = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/data_mamta/"
@@ -186,6 +203,13 @@ if __name__ == '__main__':
     #
     # imageInfo = load_from_dicom(raw_data_dir, imageInfo, pos_df, labeled=False)
 
-    root_dir = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/data_king/labeled"
-    imageInfo = change_path(root_dir)
+    ## ----- Change imagePath in imageInfo ----- ##
+    # root_dir = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/data_king/labeled"
+    # imageInfo = change_path(root_dir)
+    # print("")
+
+    ## ----- Combine existing npz with additional npz ----- ##
+    root_dir = "/home/cougarnet.uh.edu/pyuan2/Datasets/Methodist_incidental/data_Ben/labeled"
+    data_folder = "/home/cougarnet.uh.edu/pyuan2/Datasets/Methodist_incidental/data_kim/labeled"
+    imageInfo = move_npz(root_dir, data_folder)
     print("")
