@@ -212,7 +212,7 @@ def train(trainLoader, testLoader, model, optimizer, scheduler, criterion, devic
 
     # return model
 
-def test(testLoader, model, device, criterion, save_folder):
+def test(testLoader, model, device, criterion, save_folder, start_epoch):
 
     # epoch = 20
     # model.load_state_dict(torch.load(os.path.join(model_folder, 'epoch_' + str(epoch) + '.pt')))
@@ -260,13 +260,13 @@ def test(testLoader, model, device, criterion, save_folder):
     sns.heatmap(df_cm, annot=True, cmap="YlGnBu")
     plot_folder = os.path.join(save_folder, "test")
     os.makedirs(plot_folder, exist_ok=True)
-    plt.savefig(os.path.join(plot_folder, "test_confusion_matrix_ep{:d}.png".format(epoch)),
+    plt.savefig(os.path.join(plot_folder, "test_confusion_matrix_ep{:d}.png".format(start_epoch)),
                 bbox_inches="tight", dpi=200)
     plt.close()
 
     # print("epoch {:d}, test loss {:.6f}".format(epoch, score))
     print("epoch {:d} | avg test loss {:.6f} | avg test acc {:.2f}".format(
-        epoch, score, acc))
+        start_epoch, score, acc))
 
 
     # auc_score = roc_auc_score(labels_test[:, 0], probs_test[:, 0])
@@ -369,26 +369,40 @@ def test(testLoader, model, device, criterion, save_folder):
 
 
 def main():
+    datasource = "LUNA16" # or "methodist"
 
-    Train = True
+
+    Train = False
     use_clinical_features = False
-    # rootFolder = "../data_king/labeled"
-    rootFolder = "/data/pyuan2/Methodist_incidental/data_Ben/labeled/"
-    pos_label_file = "/data/pyuan2/Methodist_incidental/data_Ben/labeled/pos_labels_norm.csv"
-    cat_label_file = "../data/Lung Nodule Clinical Data_Min Kim - Added Variables 10-2-2020.xlsx"
-    # load_model_folder = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/classifier/model/classification_LUNA16/Resnet18_Adam_lr0.001"
-    load_model_folder = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/classifier/model/kim_labeled_198/Resnet18_"
-    cube_size = 64
-    trainData = LungDataset(rootFolder, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
-                           cube_size=cube_size, train=True, screen=True, clinical=use_clinical_features)
-    # trainData = LUNA16(train=True)
-    from utils import collate
-    trainLoader = DataLoader(trainData, batch_size=3, shuffle=True, collate_fn=collate)
 
-    valData = LungDataset(rootFolder, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
-                          cube_size=cube_size, train=False, screen=True, clinical=use_clinical_features)
-    # valData = LUNA16(train=False)
-    valLoader = DataLoader(valData, batch_size=1, shuffle=False)
+    if datasource == "methodist":
+        from utils import collate
+        # rootFolder = "../data_king/labeled"
+        rootFolder = "/data/pyuan2/Methodist_incidental/data_Ben/labeled/"
+        pos_label_file = "/data/pyuan2/Methodist_incidental/data_Ben/labeled/pos_labels_norm.csv"
+        cat_label_file = "../data/Lung Nodule Clinical Data_Min Kim - Added Variables 10-2-2020.xlsx"
+        # load_model_folder = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/classifier/model/classification_LUNA16/Resnet18_Adam_lr0.001"
+        load_model_folder = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/classifier/model/kim_labeled_198/Resnet18_"
+        cube_size = 64
+        trainData = LungDataset(rootFolder, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
+                               cube_size=cube_size, train=True, screen=True, clinical=use_clinical_features)
+        # trainData = LUNA16(train=True)
+        trainLoader = DataLoader(trainData, batch_size=3, shuffle=True, collate_fn=collate)
+
+        valData = LungDataset(rootFolder, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
+                              cube_size=cube_size, train=False, screen=True, clinical=use_clinical_features)
+        # valData = LUNA16(train=False)
+        valLoader = DataLoader(valData, batch_size=1, shuffle=False)
+    elif datasource == "LUNA16":
+        rootFolder = "../data/"
+        pos_label_file = "../data/pos_labels.csv"
+        cat_label_file = "../data/Lung Nodule Clinical Data_Min Kim (No name).xlsx"
+        load_model_folder = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/classifier/model/classification_LUNA16/Resnet18_Adam_lr0.001"
+        cube_size = 48
+        trainData = LUNA16(train=True)
+        trainLoader = DataLoader(trainData, batch_size=2, shuffle=True)
+        valData = LUNA16(train=False)
+        valLoader = DataLoader(valData, batch_size=1, shuffle=False)
 
     print("Shape of train_x is: ", (len(trainData), 1,) + (cube_size,) * 3)
     print("Shape of train_y is: ", (len(trainData),))
@@ -427,7 +441,10 @@ def main():
     # model_folder = "model/classification_LUNA16/"
     # model_folder = "model/classification_169patients/"
     # model_folder = "model/kim_labeled_169/"
-    model_folder = "model/kim_labeled_198/"
+    if datasource == "methodist":
+        model_folder = "model/kim_labeled_198/"
+    elif datasource == "LUNA16":
+        model_folder = "model/classification_LUNA16/"
     model_folder += "{:s}_{:s}".format(modelName, extra_str)
     os.makedirs(model_folder, exist_ok=True)
 
@@ -503,7 +520,7 @@ def main():
     if Train:
         train(trainLoader, valLoader, model, optimizer, scheduler, criterion, device, model_folder, start_epoch)
     else:
-        test(valLoader, model, device, criterion, model_folder)
+        test(valLoader, model, device, criterion, model_folder, start_epoch)
 
 
     # # Create dataLoader for the final test data

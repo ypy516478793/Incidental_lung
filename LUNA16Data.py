@@ -65,7 +65,7 @@ class LUNA16(Dataset):
         # if self.target_transform:
         #     label = self.target_transform(label)
 
-        sample = {"features": feature,
+        sample = {"cubes": feature,
                   "label": label}
 
         return sample
@@ -76,6 +76,6 @@ if __name__ == '__main__':
     trainLoader = DataLoader(trainData, batch_size=2, shuffle=True)
 
     for sample_batch in trainLoader:
-        x, y = sample_batch["features"], sample_batch["label"]
+        x, y = sample_batch["cubes"], sample_batch["label"]
         print(x)
         print(y, "\n")
