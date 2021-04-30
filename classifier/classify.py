@@ -33,7 +33,7 @@ class RMSLELoss(nn.Module):
     def forward(self, pred, actual):
         return torch.sqrt(self.mse(torch.log(pred + 1), torch.log(actual + 1)))
 
-def train(trainLoader, testLoader, model, optimizer, scheduler, criterion, device, model_folder):
+def train(trainLoader, testLoader, model, optimizer, scheduler, criterion, device, model_folder, start_epoch=0):
     epochs = 30
     step = 0
     num_classes = 2
@@ -44,7 +44,7 @@ def train(trainLoader, testLoader, model, optimizer, scheduler, criterion, devic
     test_loss = []
     test_acc = []
     test_step = []
-    for epoch in tqdm(range(epochs)):
+    for epoch in tqdm(range(start_epoch, epochs)):
         model.train()
         scores = []
         correct = 0
@@ -59,6 +59,7 @@ def train(trainLoader, testLoader, model, optimizer, scheduler, criterion, devic
                 # x1 = [x.float().to(device) for x in x1]
             else:
                 x1 = x1.float().to(device)
+                y1 = y1.to(device)
 
             # cube_size = x1.shape[2]
             # img_grid = torchvision.utils.make_grid(x1[:, :, cube_size // 2])
@@ -133,6 +134,7 @@ def train(trainLoader, testLoader, model, optimizer, scheduler, criterion, devic
                     y2 = torch.from_numpy(np.array(y2).astype(np.int)).to(device)
                 else:
                     x2 = x2.float().to(device)
+                    y2 = y2.to(device)
                 optimizer.zero_grad()
                 p2 = model(x2)
                 loss = criterion(p2, y2)
@@ -177,7 +179,7 @@ def train(trainLoader, testLoader, model, optimizer, scheduler, criterion, devic
             scheduler.step(score)
         print("=" * 50)
 
-        if epoch % 10 == 0:
+        if epoch % 5 == 0:
             torch.save(model.state_dict(), os.path.join(model_folder, 'epoch_' + str(epoch) + '.pt'))
 
     if testLoader:
@@ -210,11 +212,11 @@ def train(trainLoader, testLoader, model, optimizer, scheduler, criterion, devic
 
     # return model
 
-def test(testLoader, model, device, criterion, model_folder, save_folder):
+def test(testLoader, model, device, criterion, save_folder):
 
-    epoch = 20
-    model.load_state_dict(torch.load(os.path.join(model_folder, 'epoch_' + str(epoch) + '.pt')))
-    print("load model from: {:s}".format(os.path.join(model_folder, 'epoch_' + str(epoch) + '.pt')))
+    # epoch = 20
+    # model.load_state_dict(torch.load(os.path.join(model_folder, 'epoch_' + str(epoch) + '.pt')))
+    # print("load model from: {:s}".format(os.path.join(model_folder, 'epoch_' + str(epoch) + '.pt')))
     model.eval()
 
     num_classes = 2
@@ -368,12 +370,14 @@ def test(testLoader, model, device, criterion, model_folder, save_folder):
 
 def main():
 
-    Train = False
+    Train = True
     use_clinical_features = False
-    rootFolder = "../data_king/labeled"
-    pos_label_file = "../data/pos_labels.csv"
+    # rootFolder = "../data_king/labeled"
+    rootFolder = "/data/pyuan2/Methodist_incidental/data_Ben/labeled/"
+    pos_label_file = "/data/pyuan2/Methodist_incidental/data_Ben/labeled/pos_labels_norm.csv"
     cat_label_file = "../data/Lung Nodule Clinical Data_Min Kim - Added Variables 10-2-2020.xlsx"
-    load_model_folder = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/classifier/model/classification_LUNA16/Resnet18_Adam_lr0.001"
+    # load_model_folder = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/classifier/model/classification_LUNA16/Resnet18_Adam_lr0.001"
+    load_model_folder = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/classifier/model/kim_labeled_198/Resnet18_"
     cube_size = 64
     trainData = LungDataset(rootFolder, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
                            cube_size=cube_size, train=True, screen=True, clinical=use_clinical_features)
@@ -422,7 +426,8 @@ def main():
     # model_folder = "model/classification_negMultiple/"
     # model_folder = "model/classification_LUNA16/"
     # model_folder = "model/classification_169patients/"
-    model_folder = "model/kim_labeled_169/"
+    # model_folder = "model/kim_labeled_169/"
+    model_folder = "model/kim_labeled_198/"
     model_folder += "{:s}_{:s}".format(modelName, extra_str)
     os.makedirs(model_folder, exist_ok=True)
 
@@ -458,6 +463,30 @@ def main():
     #     lambda x: torch.from_numpy(x).float()
     # ])
 
+    # epoch = 20
+    # model.load_state_dict(torch.load(os.path.join(load_model_folder, 'epoch_' + str(epoch) + '.pt')))
+    # print("load model from: {:s}".format(os.path.join(load_model_folder, 'epoch_' + str(epoch) + '.pt')))
+
+    if load_model_folder:
+        model_list = [m for m in os.listdir(load_model_folder) if m.endswith("pt")]
+        from natsort import natsorted
+        latest_model = natsorted(model_list)[-1]
+        start_epoch = int(latest_model.strip(".pt")[6:])
+        model_path = os.path.join(load_model_folder, latest_model)
+        state_dict = torch.load(model_path)
+        try:
+            model.load_state_dict(state_dict)
+        except RuntimeError:
+            from collections import OrderedDict
+            new_state_dict = OrderedDict()
+            for k, v in state_dict.items():
+                name = "module." + k  # add "module." for dataparallel
+                new_state_dict[name] = v
+            model.load_state_dict(new_state_dict)
+
+        print("Load successfully from " + model_path)
+    else:
+        start_epoch = 0
 
     # Create dataLoader for training the model
     # pseudo_train_x, pseudo_test_x, pseudo_train_y, pseudo_test_y = train_test_split(
@@ -472,9 +501,9 @@ def main():
     # testLoader = DataLoader(testData, batch_size=len(pseudo_test_x), shuffle=False)
     # Train the model
     if Train:
-        train(trainLoader, valLoader, model, optimizer, scheduler, criterion, device, model_folder)
+        train(trainLoader, valLoader, model, optimizer, scheduler, criterion, device, model_folder, start_epoch)
     else:
-        test(valLoader, model, device, criterion, load_model_folder, model_folder)
+        test(valLoader, model, device, criterion, model_folder)
 
 
     # # Create dataLoader for the final test data

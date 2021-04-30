@@ -18,6 +18,13 @@ import torch
 import os
 
 
+exclude = ["001030196-20121205", "005520101-20130316", "009453325-20130820", "034276428-20131212",
+           "036568905-20150714", "038654273-20160324", "011389806-20160907", "015995871-20160929",
+           "052393550-20161208", "033204314-20170207", "017478009-20170616", "027456904-20180209",
+           "041293960-20170227", "000033167-20131213", "022528020-20180525", "025432105-20180730",
+           "000361956-20180625"]
+
+
 class LungDataset(Dataset):
     def __init__(self, rootFolder, pos_label_file=None, cat_label_file=None, cube_size=64,
                  train=None, screen=True, clinical=False):
@@ -36,6 +43,8 @@ class LungDataset(Dataset):
         self.imageInfo = np.load(os.path.join(rootFolder, "CTinfo.npz"), allow_pickle=True)["info"]
         self.imageInfo = np.array(self.imageInfo)
         # self.imageInfo = self.imageInfo[:3]
+        self.remove_duplicate()
+        self.__check_labels__()
         if screen:
             self.screen()
         if train is not None:
@@ -51,6 +60,8 @@ class LungDataset(Dataset):
 
         image = self.load_image(imageId)
         pos = self.load_pos(imageId)
+        if len(pos) == 0:
+            print("Error: no data!")
         cubes = self.get_cube(imageId, self.cube_size)
         label = self.load_cat(imageId)
         # if len(feature) > 1:
@@ -70,6 +81,31 @@ class LungDataset(Dataset):
             sample = sample.update({"clinical": clinical})
 
         return sample
+
+    def remove_duplicate(self):
+        for i, info in enumerate(self.imageInfo):
+            if info["date"] == "":
+                info["date"] = info["imagePath"].strip(".npz").split("-")[-1]
+
+        identifier_set = ["{:}-{:}".format(info["patientID"], info["date"]) for info in self.imageInfo]
+        remove_ids = []
+        from collections import Counter
+        cnt = Counter(identifier_set)
+        for k, v in cnt.items():
+            if k in exclude:
+                indices = [i for i, x in enumerate(identifier_set) if x == k]
+                remove_ids = remove_ids + indices
+            elif v > 1:
+                indices = [i for i, x in enumerate(identifier_set) if x == k]
+                remove_ids = remove_ids + indices[:-1]
+        self.imageInfo = np.delete(self.imageInfo, remove_ids)
+
+    def __check_labels__(self):
+        for info in tqdm(self.imageInfo):
+            pstr = info["pstr"]
+            dstr = info["date"]
+            existId = (self.pos_df["patient"] == pstr) & (self.pos_df["date"] == dstr)
+            assert existId.sum() > 0, "no matches, pstr {:}, dstr {:}".format(pstr, dstr)
 
     # def add_scan(self, pstr, patientID, date, series, imgPath, sliceThickness, pixelSpacing, scanID, **kwargs):
     #     '''
@@ -285,14 +321,12 @@ class LungDataset(Dataset):
 
     def load_pos(self, imageId):
         imgInfo = self.imageInfo[imageId]
-        imgshape = np.load(imgInfo["imagePath"])["image"].shape
-        thickness, spacing = imgInfo["sliceThickness"], imgInfo["pixelSpacing"]
         pstr = imgInfo["pstr"]
         dstr = imgInfo["date"]
-        existId = (self.pos_df["patient"] == pstr) & (self.pos_df["date"] == dstr)
+        patient_colname = "patient" if "patient" in self.pos_df.columns else 'Patient\n Index'
+        assert patient_colname in self.pos_df
+        existId = (self.pos_df[patient_colname] == pstr) & (self.pos_df["date"] == dstr)
         pos = self.pos_df[existId][["x", "y", "z", "d"]].values
-        pos[:, 2] = pos[:, 2] - 1
-        pos = np.array([resample_pos(p, thickness, spacing, imgshape=imgshape) for p in pos])
 
         return pos
 
@@ -377,74 +411,74 @@ if __name__ == '__main__':
     #
     # print("")
 
-    # ## --------------- mannually check labels --------------- ##
-    rootFolder = "data_king/labeled/"
-    pos_label_file = "data/pos_labels.csv"
-    cat_label_file = "data/Lung Nodule Clinical Data_Min Kim - Added Variables 10-2-2020.xlsx"
-    cube_size = 64
-    lungData = LungDataset(rootFolder, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
-                           cube_size=cube_size, train=None, screen=False, clinical=False)
-    lungData.pos_df2 = pd.read_excel("data_king/gt_labels_checklist.xlsx", sheet_name="confident_labels_checklist",
-                                     skiprows=1, dtype={"date": str})
-    from utils import plot_bbox
-    def plot_individual_nodule(i, nodule_idx=0, new_d=None, new_loc=None):
-        imgs = lungData.load_image(i)
-        imgInfo = lungData.imageInfo[i]
-        for k, v in imgInfo.items():
-            print(k, ": ", v)
-        thickness, spacing = imgInfo["sliceThickness"], imgInfo["pixelSpacing"]
-        pstr = imgInfo["pstr"]
-        dstr = imgInfo["date"]
-        existId = (lungData.pos_df["patient"] == pstr) & (lungData.pos_df["date"] == dstr)
-        pos = lungData.pos_df[existId][["x", "y", "z", "d"]].values
-        print("len of pos: ", len(pos))
-        if new_d is not None: pos[nodule_idx, 3] = new_d
-        if new_loc is not None: pos[nodule_idx, :3] = new_loc
-        pos[:, 2] = pos[:, 2] - 1
-        print("original pos: ")
-        print(np.array2string(pos, separator=', '))
-        pos = np.array([resample_pos(p, thickness, spacing, imgshape=imgs.shape) for p in pos])
-        print("isotropic pos: ")
-        print(np.array2string(pos, separator=', '))
-
-        existId = (lungData.pos_df2["Patient\n Index"] == pstr) & (lungData.pos_df2["date"] == dstr)
-        pos2 = lungData.pos_df2[existId][["x", "y", "z", "d"]].values
-        print("original pos from new labels: ")
-        print(np.array2string(pos2, separator=', '))
-        size = lungData.pos_df2[existId]["size(mm)"].values
-        print("real size: ", size)
-        plot_bbox(imgs, pos[nodule_idx], None)
-
-        return imgs, pos[nodule_idx]
-
-    a, b = plot_individual_nodule(63, nodule_idx=1, new_d=None, new_loc=None)
-
-
-    ## --------------- save central slices with original size --------------- ##
-    # from PIL import Image
-    # from utils import plot_bbox
+    # # ## --------------- mannually check labels --------------- ##
     # rootFolder = "data_king/labeled/"
     # pos_label_file = "data/pos_labels.csv"
     # cat_label_file = "data/Lung Nodule Clinical Data_Min Kim - Added Variables 10-2-2020.xlsx"
     # cube_size = 64
     # lungData = LungDataset(rootFolder, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
     #                        cube_size=cube_size, train=None, screen=False, clinical=False)
-    # saveDir = "isotropic_central_slices"
-    # os.makedirs(saveDir, exist_ok=True)
-    # for i in tqdm(range(62, len(lungData.imageInfo))):
-    #     info = lungData.imageInfo[i]
-    #     save_name = "{:s}_{:s}_{:s}".format(info["pstr"], info["patientID"], info["date"])
-    #     save_name += "_PET" if info["PET"] == "Y" else ""
-    #     img = lungData.load_image(i)
-    #     pos = lungData.load_pos(i)
-    #     for idx, p in enumerate(pos):
-    #         z = int(p[2])
-    #         c_img = img[z]
-    #         save_dir = os.path.join(saveDir, save_name + "_no{:d}_z{:d}.png".format(idx, z))
-    #         PILimg = Image.fromarray(c_img)
-    #         PILimg.save(save_dir)
-    #         bbox_save_dir = save_dir.replace(".png", "_bbox.png")
-    #         plot_bbox(img, p, bbox_save_dir, show=False)
+    # lungData.pos_df2 = pd.read_excel("data_king/gt_labels_checklist.xlsx", sheet_name="confident_labels_checklist",
+    #                                  skiprows=1, dtype={"date": str})
+    # from utils import plot_bbox
+    # def plot_individual_nodule(i, nodule_idx=0, new_d=None, new_loc=None):
+    #     imgs = lungData.load_image(i)
+    #     imgInfo = lungData.imageInfo[i]
+    #     for k, v in imgInfo.items():
+    #         print(k, ": ", v)
+    #     thickness, spacing = imgInfo["sliceThickness"], imgInfo["pixelSpacing"]
+    #     pstr = imgInfo["pstr"]
+    #     dstr = imgInfo["date"]
+    #     existId = (lungData.pos_df["patient"] == pstr) & (lungData.pos_df["date"] == dstr)
+    #     pos = lungData.pos_df[existId][["x", "y", "z", "d"]].values
+    #     print("len of pos: ", len(pos))
+    #     if new_d is not None: pos[nodule_idx, 3] = new_d
+    #     if new_loc is not None: pos[nodule_idx, :3] = new_loc
+    #     pos[:, 2] = pos[:, 2] - 1
+    #     print("original pos: ")
+    #     print(np.array2string(pos, separator=', '))
+    #     pos = np.array([resample_pos(p, thickness, spacing, imgshape=imgs.shape) for p in pos])
+    #     print("isotropic pos: ")
+    #     print(np.array2string(pos, separator=', '))
+    #
+    #     existId = (lungData.pos_df2["Patient\n Index"] == pstr) & (lungData.pos_df2["date"] == dstr)
+    #     pos2 = lungData.pos_df2[existId][["x", "y", "z", "d"]].values
+    #     print("original pos from new labels: ")
+    #     print(np.array2string(pos2, separator=', '))
+    #     size = lungData.pos_df2[existId]["size(mm)"].values
+    #     print("real size: ", size)
+    #     plot_bbox(imgs, pos[nodule_idx], None)
+    #
+    #     return imgs, pos[nodule_idx]
+    #
+    # a, b = plot_individual_nodule(63, nodule_idx=1, new_d=None, new_loc=None)
+
+
+    ## --------------- save central slices with original size --------------- ##
+    from PIL import Image
+    from utils import plot_bbox
+    rootFolder = "data_king/labeled/"
+    pos_label_file = "data/pos_labels.csv"
+    cat_label_file = "data/Lung Nodule Clinical Data_Min Kim - Added Variables 10-2-2020.xlsx"
+    cube_size = 64
+    lungData = LungDataset(rootFolder, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
+                           cube_size=cube_size, train=None, screen=False, clinical=False)
+    saveDir = "isotropic_central_slices"
+    os.makedirs(saveDir, exist_ok=True)
+    for i in tqdm(range(62, len(lungData.imageInfo))):
+        info = lungData.imageInfo[i]
+        save_name = "{:s}_{:s}_{:s}".format(info["pstr"], info["patientID"], info["date"])
+        save_name += "_PET" if info["PET"] == "Y" else ""
+        img = lungData.load_image(i)
+        pos = lungData.load_pos(i)
+        for idx, p in enumerate(pos):
+            z = int(p[2])
+            c_img = img[z]
+            save_dir = os.path.join(saveDir, save_name + "_no{:d}_z{:d}.png".format(idx, z))
+            PILimg = Image.fromarray(c_img)
+            PILimg.save(save_dir)
+            bbox_save_dir = save_dir.replace(".png", "_bbox.png")
+            plot_bbox(img, p, bbox_save_dir, show=False)
 
 ## --------------- step by step --------------- ##
 

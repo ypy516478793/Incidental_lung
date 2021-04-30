@@ -287,6 +287,9 @@ def collate(batch):
     for key in elem.keys():
         concat = [d[key] for d in batch]
         output[key] = concat
+        if key == "cubes":
+            if np.any([len(i) == 0 for i in concat]):
+                print("ERROR: NO DATA!")
     return output
 
 
