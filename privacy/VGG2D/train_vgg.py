@@ -59,11 +59,14 @@ class DataGenerator():
         return batch_X, batch_y
 
 class IncidentalData():
-    def __init__(self, data_dir, image_size, num_classes, kfold=None, splitId=None):
+    def __init__(self, datasource, data_dir, image_size, num_classes, kfold=None, splitId=None):
         self.data_dir = data_dir
         self.image_size = image_size
         self.num_classes = num_classes
-        self.load_data()
+        if datasource == "methodist":
+            self.load_data()
+        elif datasource == "luna":
+            self.load_luna_data()
         # self.balance_data()
         self.split_data(kfold, splitId)
 
@@ -79,6 +82,7 @@ class IncidentalData():
         large_ids = all_ids[y[:, 1] != small_cls]
         sampled_small_ids = np.random.choice(np.repeat(small_ids, repeat_n), gap, replace=False)
         resampled_ids = np.concatenate([large_ids, small_ids, sampled_small_ids])
+        np.random.shuffle(resampled_ids)
 
         X = X[resampled_ids]
         y = y[resampled_ids]
@@ -101,6 +105,10 @@ class IncidentalData():
 
         if args.balance_option == "after":
             X_train, y_train = self.balance_any_data(X_train, y_train)
+
+        # X_train = X_train[:24]
+        # y_train = y_train[:24]
+
         self.train_data = (X_train, y_train)
         self.test_data = (X_test, y_test)
 
@@ -126,6 +134,39 @@ class IncidentalData():
             self.load_raw(data_path)
 
             exit(-1)
+
+    def load_luna_data(self, reload=False):
+        data_path = os.path.join(self.data_dir, "2D_luna_lung.npz")
+        if os.path.exists(data_path) and not reload:
+            self.data = np.load(data_path, allow_pickle = True)
+            self.X, self.y = self.data["x"], self.data["y"]
+        else:
+            from skimage.transform import resize
+            X, y = [], []
+            neg_dir = os.path.join(self.data_dir, "0")
+            files = [i for i in os.listdir(neg_dir) if i.endswith(".npy")]
+            for f in files:
+                cube = np.load(os.path.join(neg_dir, f))
+                size = len(cube)
+                image = resize(cube[size // 2], (224, 224), anti_aliasing=True)
+                label = [1, 0]
+                X.append(image)
+                y.append(label)
+            pos_dir = os.path.join(self.data_dir, "1")
+            files = [i for i in os.listdir(pos_dir) if i.endswith(".npy")]
+            for f in files:
+                cube = np.load(os.path.join(pos_dir, f))
+                size = len(cube)
+                image = resize(cube[size // 2], (224, 224), anti_aliasing=True)
+                label = [0, 1]
+                X.append(image)
+                y.append(label)
+            rand_ids = np.random.permutation(np.arange(len(X)))
+            self.X = np.array(X)[rand_ids]
+            self.y = np.array(y)[rand_ids]
+
+            np.savez_compressed(data_path, x=self.X, y=self.y)
+            print("Save slice 2D luna lung nodule data to {:s}".format(data_path))
 
     def screen(self):
         num_images = len(self.imageInfo)
@@ -586,10 +627,12 @@ def main():
         kfold = KFold(n_splits=args.kfold, random_state=42)
     else:
         kfold = None
-    dataset = IncidentalData(args.data_dir, args.image_size, args.num_classes, kfold=kfold, splitId=args.splitId)
+    dataset = IncidentalData(args.datasource, args.data_dir, args.image_size, args.num_classes, kfold=kfold, splitId=args.splitId)
 
     train_loader = DataGenerator(dataset.train_data, args.batchsize, train=True)
-    test_loader = DataGenerator(dataset.test_data, batch_size=len(dataset.test_data[0]), train=False)
+    # test_loader = DataGenerator(dataset.test_data, batch_size=len(dataset.test_data[0]), train=False)
+    test_loader = DataGenerator(dataset.test_data, batch_size=100, train=False)
+    # test_loader = DataGenerator(dataset.test_data, batch_size=args.batchsize, train=False)
 
     imagenet_pretrain = False
     if args.load_model:
@@ -599,9 +642,11 @@ def main():
             from natsort import natsorted
             latest_model = natsorted(model_list)[-1]
             load_path = os.path.join(load_path, latest_model)
+            print("load model from {:s}".format(load_path))
     elif args.load_pretrain:
         load_path = "vgg19.npy"
         imagenet_pretrain = True
+        print("load pretrained model from {:s}".format(load_path))
     else:
         load_path = None
     model = Vgg19(load_path, pretrain=imagenet_pretrain)
@@ -632,9 +677,9 @@ def main():
 
 def get_args():
     parser = argparse.ArgumentParser()
-    # parser.add_argument('--datasource', type=str, help='SEAMII, BP2004', default="SEAMII")
-    parser.add_argument('--data_dir', type=str, help='data file directory', default="../../data/")
-    parser.add_argument('--save_dir', type=str, help="directory of saved results", default="results/")
+    parser.add_argument('--datasource', type=str, help='luna, methodist', default="luna")
+    parser.add_argument('--data_dir', type=str, help='data file directory', default="../../LUNA16/classification")
+    parser.add_argument('--save_dir', type=str, help="directory of saved results", default="LUNA_results/")
     parser.add_argument('--epochs', type=int, help='number of epochs', default=50)
     parser.add_argument('--batchsize', type=int, help='batch size', default=16)
     parser.add_argument('--lr', type=float, help='learning rate', default=0.001)

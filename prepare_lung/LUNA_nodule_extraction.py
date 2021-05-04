@@ -1,11 +1,11 @@
-from __future__ import print_function, division
+# from __future__ import print_function, division
 import SimpleITK as sitk
 import numpy as np
 import os
 from glob import glob
 import pandas as pd
 
-tqdm = lambda x: x
+from tqdm import tqdm
 
 
 def load_itkfilewithtrucation(filename, upper=200, lower=-200):
@@ -68,12 +68,13 @@ def get_filename(file_list, case):
 
 def get_node_classify():
     # Getting list of image files and output nuddle 0 and 1
+    count_pos = 0
     count_neg = 0
     for subsetindex in range(10):
         classify_size = 48
-        luna_path = "/home/cougarnet.uh.edu/pyuan2/Projects/DeepLung-3D_Lung_Nodule_Detection/data/raw_files/"
+        luna_path = "/home/cougarnet.uh.edu/pyuan2/Projects/DeepLung-3D_Lung_Nodule_Detection/LUNA16/raw_files/"
         luna_subset_path = luna_path + "subset" + str(subsetindex) + "/"
-        output_path = "LUNA16/classsification/"
+        output_path = "../LUNA16/classification_DEBUG/"
         file_list = glob(luna_subset_path + "*.mhd")
 
         file_list_path = []
@@ -81,12 +82,12 @@ def get_node_classify():
             file_list_path.append(file_list[i][0:-4])
 
         # The locations of the nodes
-        luna_csv_path = "/home/cougarnet.uh.edu/pyuan2/Projects/DeepLung-3D_Lung_Nodule_Detection/data/"
+        luna_csv_path = "/home/cougarnet.uh.edu/pyuan2/Projects/DeepLung-3D_Lung_Nodule_Detection/LUNA16/"
         df_node = pd.read_csv(luna_csv_path + "candidates.csv")
         df_node["file"] = df_node["seriesuid"].map(lambda file_name: get_filename(file_list_path, file_name))
         df_node = df_node.dropna()
         # Looping over the image files
-        for fcount, img_file in enumerate(tqdm(file_list)):
+        for fcount, img_file in tqdm(enumerate(file_list)):
             # get all nodules associate with file
             img_file = img_file[0: -4]
             mini_df = df_node[df_node["file"] == img_file]
@@ -102,6 +103,7 @@ def get_node_classify():
                 spacing = np.array(itk_img.GetSpacing())
                 # go through all nodes
                 index = 0
+                mini_df = mini_df.sample(np.min([len(mini_df), 10]))
                 for node_idx, cur_row in mini_df.iterrows():
                     node_x = cur_row["coordX"]
                     node_y = cur_row["coordY"]
@@ -114,6 +116,7 @@ def get_node_classify():
                     # convert x,y,z order v_center to z,y,z order v_center
                     v_center[0], v_center[1], v_center[2] = v_center[2], v_center[1], v_center[0]
                     # get cub size of classify_size
+                    node_cube = get_cube_from_img(img_array, v_center, classify_size)
                     node_cube = get_cube_from_img(img_array, v_center, classify_size)
                     node_cube.astype(np.uint8)
                     # save as bmp file
@@ -130,22 +133,25 @@ def get_node_classify():
                     #         cv2.imwrite(filepath + str(i) + ".bmp", node_cube[i])
                     # index += 1
                     # save as npy file
-                    # if label == 1:
-                    #     filepath = output_path + "1/"
-                    #     if not os.path.exists(filepath):
-                    #         os.makedirs(filepath)
-                    #     filename = str(subsetindex) + "_" + str(fcount) + "_" + str(index)
-                    #     np.save(filepath + filename + ".npy", node_cube)
+                    if label == 1:
+                        filepath = output_path + "1/"
+                        if not os.path.exists(filepath):
+                            os.makedirs(filepath)
+                        filename = str(subsetindex) + "_" + str(fcount) + "_" + str(index)
+                        if count_pos < 1500:
+                            np.save(filepath + filename + ".npy", node_cube)
+                        count_pos += 1
+
                     if label == 0:
                         filepath = output_path + "0/"
                         if not os.path.exists(filepath):
                             os.makedirs(filepath)
                         filename = str(subsetindex) + "_" + str(fcount) + "_" + str(index)
-                        np.save(filepath + filename + ".npy", node_cube)
-
+                        if count_neg < 1500:
+                            np.save(filepath + filename + ".npy", node_cube)
                         count_neg += 1
-                        if count_neg == 1351:
-                            raise Exception
+                    if np.min([count_pos, count_neg]) > 1500:
+                        return "finished!"
                     index += 1
 
 

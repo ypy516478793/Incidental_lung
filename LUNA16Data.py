@@ -10,7 +10,7 @@ import torch
 import os
 
 class LUNA16(Dataset):
-    def __init__(self, rootFolder="/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/LUNA16/classsification/", train=True):
+    def __init__(self, rootFolder="/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/LUNA16/classification/", train=True):
         """
         House price dataset
         :param x: all_features, shape (#samples, #features)
