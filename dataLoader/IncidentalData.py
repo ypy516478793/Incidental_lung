@@ -1,5 +1,6 @@
 from tqdm import tqdm
 from utils.model_utils import extract_cube, lumTrans
+from utils.data_utils import balance_any_data
 from torch.utils.data import Dataset
 from sklearn.model_selection import train_test_split
 from sklearn.model_selection import KFold
@@ -92,15 +93,34 @@ class IncidentalConfig(object):
                 print("{:30} {}".format(a, getattr(self, a)))
         print("\n")
 
+class Base(Dataset):
+    def __init__(self, images, labels, transform=None):
+        self.images = images
+        self.labels = labels
+        self.transform = transform
 
-class LungDataset(Dataset):
+    def __getitem__(self, item):
+        if torch.is_tensor(item):
+            item = item.tolist()
+
+        image = self.images[item]
+        label = self.labels[item]
+        if self.transform:
+            image = self.transform(image)
+        return image, label
+
+    def __len__(self):
+        return len(self.images)
+
+
+
+class LungDataset(object):
     # def __init__(self, rootFolder, pos_label_file=None, cat_label_file=None, cube_size=64,
     #              train=None, screen=True, clinical=False):
     # def __init__(self, root_dir, POS_LABEL_FILE, CAT_LABEL_FILE, config, subset="train"):
-    def __init__(self, config, subset="train", kfold=None, splitId=None):
-        # assert (subset == "train" or subset == "val" or subset == "test" or subset == "inference")
+    def __init__(self, config):
         self.config = config
-        self.subset = subset
+        self.data_dir = config.DATA_DIR
         self._imageIds = []
         # Load position label file
         pos_label_file = config.POS_LABEL_FILE
@@ -122,38 +142,103 @@ class LungDataset(Dataset):
         self.__remove_duplicate__()
         self.__check_labels__()
         self.__screen__()
-        self.load_subset(subset, random_state=config.SPLIT_SEED, limit_train_size=config.LIMIT_TRAIN,
-                         kfold=kfold, splitId=splitId)
-        # Prepare dataset index mapping
-        self.prepare()
+        self.load_data()
 
-    def __len__(self):
-        return len(self.imageIds)
-
-    def __getitem__(self, imageId):
-        if torch.is_tensor(imageId):
-            imageId = imageId.tolist()
-
-        image = self.load_image(imageId)
-        pos = self.load_pos(imageId)
-        assert len(pos) > 0, "Error: no data!"
-        cubes = self.get_cube(imageId, self.config.CUBE_SIZE)
-        label = self.load_cat(imageId)
-        # if len(feature) > 1:
-        #     assert label == 1, "Must be benign cases!"
-        #     feature = feature[[np.random.randint(len(feature))]]
+    def get_datasets(self, kfold, splitId):
+        datasets = self.load_subset(random_state=self.config.SPLIT_SEED, kfold=kfold, splitId=splitId)
+        datasets_dict = {}
+        for subset in ["train", "val", "test", "train_val"]:
+            if subset == "train_val":
+                images = np.concatenate([datasets["train"]["X"], datasets["train"]["X"]])
+                labels = np.concatenate([datasets["train"]["y"], datasets["train"]["y"]])
+                datasets_dict[subset] = Base(images, labels)
+            else:
+                dataset = datasets[subset]
+                datasets_dict[subset] = Base(dataset["X"], dataset["y"])
+        return datasets_dict
 
 
-        sample = {"image": image,
-                  "pos": pos,
-                  "cubes": cubes,
-                  "label": label}
+    def load_subset(self, random_state=None, kfold=None, splitId=None):
+        datasets = {}
+        if random_state is None:
+            random_state = 42
+        if kfold is None:
+            X_train, X_test, y_train, y_test = train_test_split(self.X, self.y, test_size=0.2, random_state=random_state)
+            X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2, random_state=random_state)
+        else:
+            assert splitId is not None
+            all_indices = np.arange(len(self.X))
+            kf_indices = [(train_index, test_index) for train_index, test_index in kfold.split(all_indices)]
+            train_index, test_index = kf_indices[splitId]
+            X_train, X_test = self.X[train_index], self.X[test_index]
+            y_train, y_test = self.y[train_index], self.y[test_index]
+            X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2,
+                                                              random_state=random_state)
+        X_train, y_train = balance_any_data(X_train, y_train)
+        X_val, y_val = balance_any_data(X_val, y_val)
+        datasets["train"] = {"X": X_train, "y": y_train}
+        datasets["val"] = {"X": X_val, "y": y_val}
+        datasets["test"] = {"X": X_test, "y": y_test}
+        return datasets
 
-        if self.config.LOAD_CLINICAL:
-            clinical = self.get_clinical(imageId).astype(np.float32)
-            sample = sample.update({"clinical": clinical})
+    # def split_data(self, kfold=None, splitId=None):
+    #     if args.balance_option == "before":
+    #         self.X, self.y = self.balance_any_data(self.X, self.y)
+    #     self.X = self.X[..., np.newaxis] / 255.0
+    #     self.X = np.repeat(self.X, 3, axis=-1)
+    #     if kfold is None:
+    #         X_train, X_test, y_train, y_test = train_test_split(self.X, self.y, test_size=0.2, random_state=42)
+    #     else:
+    #         assert splitId is not None
+    #         all_indices = np.arange(len(self.X))
+    #         kf_indices = [(train_index, val_index) for train_index, val_index in kfold.split(all_indices)]
+    #         train_index, val_index = kf_indices[splitId]
+    #         X_train, X_test = self.X[train_index], self.X[val_index]
+    #         y_train, y_test = self.y[train_index], self.y[val_index]
+    #
+    #     if args.balance_option == "after":
+    #         X_train, y_train = self.balance_any_data(X_train, y_train)
+    #
+    #     # X_train = X_train[:24]
+    #     # y_train = y_train[:24]
+    #
+    #     self.train_data = (X_train, y_train)
+    #     self.test_data = (X_test, y_test)
+    #
+    #     print("Shape of train_x is: ", X_train.shape)
+    #     print("Shape of train_y is: ", y_train.shape)
+    #     print("Shape of test_x is: ", X_test.shape)
+    #     print("Shape of test_y is: ", y_test.shape)
 
-        return sample
+    def load_data(self, reload=False):
+        data_path = os.path.join(self.data_dir, "3D_incidental_lung.npz")
+        if os.path.exists(data_path) and not reload:
+            self.data = np.load(data_path, allow_pickle=True)
+            self.X, self.y = self.data["x"], self.data["y"]
+        else:
+            self.load_raw(data_path)
+
+    def load_raw(self, data_path):
+        print("Preprocessing -- Crop cubes")
+        X, y = [], []
+        for imageId in tqdm(range(len(self.imageInfo))):
+            # image = self.load_image(imageId)
+            # pos = self.load_pos(imageId)
+            # assert len(pos) > 0, "Error: no data!"
+            cubes = self.get_cube(imageId, self.config.CUBE_SIZE)
+            label = self.load_cat(imageId)
+            labels = np.repeat(label, len(cubes))
+
+            # slices = self.get_slices(i, self.image_size)
+            # label = self.load_cat(i)
+            # labels = np.eye(self.num_classes, dtype=np.int)[np.repeat(label, len(slices))]
+            X.append(*cubes)
+            y.append(*labels)
+        self.X = np.expand_dims(X, axis=1)
+        self.y = np.array(y)
+
+        np.savez_compressed(data_path, x=self.X, y=self.y)
+        print("Save slice 3D incidental lung nodule data to {:s}".format(data_path))
 
     def __remove_duplicate__(self):
         for i, info in enumerate(self.imageInfo):
@@ -180,47 +265,47 @@ class LungDataset(Dataset):
             existId = (self.pos_df["patient"] == pstr) & (self.pos_df["date"] == dstr)
             assert existId.sum() > 0, "no matches, pstr {:}, dstr {:}".format(pstr, dstr)
 
-    def load_subset(self, subset, random_state=None, limit_train_size=None, kfold=None, splitId=None):
-        if subset == "inference":
-            infos = self.imageInfo
-        else:
-            ## train/val/test split
-            if random_state is None:
-                random_state = 42
-            if kfold is None:
-                trainInfo, valInfo = train_test_split(self.imageInfo, test_size=0.6, random_state=random_state)
-                valInfo, testInfo = train_test_split(valInfo, test_size=0.5, random_state=random_state)
-            else:
-                assert splitId is not None
-                trainValInfo, testInfo = train_test_split(self.imageInfo, test_size=0.2, random_state=random_state)
-                kf_indices = [(train_index, val_index) for train_index, val_index in kfold.split(trainValInfo)]
-                train_index, val_index = kf_indices[splitId]
-                trainInfo, valInfo = trainValInfo[train_index], trainValInfo[val_index]
-
-
-            assert subset == "train" or subset == "val" or subset == "test" or subset =="train_val", "Unknown subset!"
-            if subset == "train":
-                infos = trainInfo
-                if limit_train_size is not None:
-                    infos = infos[:int(limit_train_size * len(infos))]
-            elif subset == "val":
-                infos = valInfo
-            elif subset == "train_val":
-                infos = np.concatenate([trainInfo, valInfo])
-            else:
-                infos = testInfo
-        self.imageInfo = infos
-
-    def prepare(self):
-        self.num_images = len(self.imageInfo)
-        self._imageIds = np.arange(self.num_images)
-        self.patient2Image = {"{:s}-{:s}".format(info['patientID'], info['date']): id
-                                      for info, id in zip(self.imageInfo, self.imageIds)}
-        self.patient2Image.update({"{:s}-{:s}".format(info['pstr'], info['date']): id
-                                  for info, id in zip(self.imageInfo, self.imageIds)})
-    @property
-    def imageIds(self):
-        return self._imageIds
+    # def load_subset(self, subset, random_state=None, limit_train_size=None, kfold=None, splitId=None):
+    #     if subset == "inference":
+    #         infos = self.imageInfo
+    #     else:
+    #         ## train/val/test split
+    #         if random_state is None:
+    #             random_state = 42
+    #         if kfold is None:
+    #             trainInfo, valInfo = train_test_split(self.imageInfo, test_size=0.6, random_state=random_state)
+    #             valInfo, testInfo = train_test_split(valInfo, test_size=0.5, random_state=random_state)
+    #         else:
+    #             assert splitId is not None
+    #             trainValInfo, testInfo = train_test_split(self.imageInfo, test_size=0.2, random_state=random_state)
+    #             kf_indices = [(train_index, val_index) for train_index, val_index in kfold.split(trainValInfo)]
+    #             train_index, val_index = kf_indices[splitId]
+    #             trainInfo, valInfo = trainValInfo[train_index], trainValInfo[val_index]
+    #
+    #
+    #         assert subset == "train" or subset == "val" or subset == "test" or subset =="train_val", "Unknown subset!"
+    #         if subset == "train":
+    #             infos = trainInfo
+    #             if limit_train_size is not None:
+    #                 infos = infos[:int(limit_train_size * len(infos))]
+    #         elif subset == "val":
+    #             infos = valInfo
+    #         elif subset == "train_val":
+    #             infos = np.concatenate([trainInfo, valInfo])
+    #         else:
+    #             infos = testInfo
+    #     self.imageInfo = infos
+    #
+    # def prepare(self):
+    #     self.num_images = len(self.imageInfo)
+    #     self._imageIds = np.arange(self.num_images)
+    #     self.patient2Image = {"{:s}-{:s}".format(info['patientID'], info['date']): id
+    #                                   for info, id in zip(self.imageInfo, self.imageIds)}
+    #     self.patient2Image.update({"{:s}-{:s}".format(info['pstr'], info['date']): id
+    #                               for info, id in zip(self.imageInfo, self.imageIds)})
+    # @property
+    # def imageIds(self):
+    #     return self._imageIds
 
     def __screen__(self):
         num_images = len(self.imageInfo)

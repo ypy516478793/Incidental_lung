@@ -17,6 +17,7 @@ import seaborn as sns
 import pandas as pd
 import numpy as np
 import time
+import copy
 import sys
 import os
 
@@ -37,13 +38,13 @@ parser.add_argument("-j", "--workers", default=0, type=int, help="number of data
 parser.add_argument("-t", "--train", type=eval, default=True, help="Train phase: True or False")
 # parser.add_argument("-cl", "--clinical", type=eval, default=False, help="Whether to use clinical features")
 
-parser.add_argument("-e", "--epochs", default=100, type=int, help="number of total epochs to run")
+parser.add_argument("-e", "--epochs", default=10, type=int, help="number of total epochs to run")
 parser.add_argument("-se", "--start-epoch", default=0, type=int, help="manual epoch number (useful on restarts)")
 parser.add_argument("-sl", "--best_loss", default=np.inf, type=float, help="manual best loss (useful on restarts)")
 parser.add_argument("-b", "--batch-size", default=4, type=int, help="mini-batch size (default: 16)")
-parser.add_argument("-lr", "--learning-rate", default=0.01, type=float, help="initial learning rate")
+parser.add_argument("-lr", "--learning-rate", default=0.001, type=float, help="initial learning rate")
 parser.add_argument("-mo", "--momentum", default=0.9, type=float, help="momentum")
-parser.add_argument("-wd", "--weight-decay", default=1e-4, type=float, help="weight decay (default: 1e-4)")
+parser.add_argument("-wd", "--weight-decay", default=1e-3, type=float, help="weight decay (default: 1e-4)")
 
 parser.add_argument("-es", "--extra_str", type=str, default="", help='extra string for data')
 
@@ -160,15 +161,21 @@ import torch
 
 
 
-def train(trainLoader, testLoader, model, optimizer, scheduler, criterion, save_dir, 
+def train(trainLoader, testLoader, trainValLoader, model, optimizer, scheduler, criterion, save_dir,
           epochs=30, start_epoch=0):
-    
+
+    model_copy = copy.deepcopy(model)
+
     plot_folder = os.path.join(save_dir, "plots")
     os.makedirs(plot_folder, exist_ok=True)
     
     num_classes = 2
+    best_val_loss = np.inf
+    best_acc = 0
+    best_epoch = epochs - 1
 
-    print_per_iteration = len(trainLoader) / 10
+    # print_per_iteration = len(trainLoader) / 10
+    print_per_iteration = 1
     train_loss = []
     train_acc = []
     test_loss = []
@@ -180,10 +187,8 @@ def train(trainLoader, testLoader, model, optimizer, scheduler, criterion, save_
 
         # Training phase
         model.train()
-        scores = []
-        correct = 0
-        total = 0
         all_preds = []
+        all_probs = []
         all_labels = []
 
         running_loss = 0.0
@@ -192,7 +197,8 @@ def train(trainLoader, testLoader, model, optimizer, scheduler, criterion, save_
         s_time = time.time()
 
         for sample_batch in trainLoader:
-            inputs, labels = sample_batch["cubes"], sample_batch["label"]
+            # inputs, labels = sample_batch["cubes"], sample_batch["label"]
+            inputs, labels = sample_batch
             if isinstance(inputs, list):
                 inputs = torch.from_numpy(np.array(inputs).astype(np.float32)).to(device)
                 labels = torch.from_numpy(np.array(labels).astype(np.int)).to(device)
@@ -211,6 +217,8 @@ def train(trainLoader, testLoader, model, optimizer, scheduler, criterion, save_
             outputs = model(inputs)
             loss = criterion(outputs, labels)
             _, preds = torch.max(outputs, 1)
+            probs = nn.functional.softmax(outputs, 1)[:, 1]
+            all_probs.append(probs.detach().cpu().numpy())
             all_preds.append(preds.cpu().numpy())
             all_labels.append(labels.cpu().numpy())
 
@@ -238,12 +246,10 @@ def train(trainLoader, testLoader, model, optimizer, scheduler, criterion, save_
         epoch_loss = running_loss / len(trainLoader.dataset)
         epoch_acc = running_corrects.double() / len(trainLoader.dataset)
         
-        
-        # score = np.mean(scores)
-        # acc = correct / total * 100
+
         all_preds = np.concatenate(all_preds).reshape(-1)
         all_labels = np.concatenate(all_labels).reshape(-1)
-        confMat = confusion_matrix(all_labels, all_preds)
+        confMat = confusion_matrix(all_labels, all_preds, np.arange(num_classes))
         df_cm = pd.DataFrame(confMat, index=[i for i in range(num_classes)],
                              columns=[i for i in range(num_classes)])
         print("Train confusion matrix: ")
@@ -264,19 +270,16 @@ def train(trainLoader, testLoader, model, optimizer, scheduler, criterion, save_
 
         if testLoader:
             model.eval()
-            # sample_batch = next(iter(testLoader))
-            # inputs, labels = sample_batch["cubes"].float(), sample_batch["label"]
-            # outputs = model(inputs.to(device))
-            # loss = criterion(outputs, labels.to(device))
-            # score = loss.cpu().detach().numpy()
 
             scores = []
             correct = 0
             total = 0
             all_preds = []
+            all_probs = []
             all_labels = []
             for sample_batch in testLoader:
-                inputs, labels = sample_batch["cubes"], sample_batch["label"]
+                # inputs, labels = sample_batch["cubes"], sample_batch["label"]
+                inputs, labels = sample_batch
                 if isinstance(inputs, list):
                     # inputs = [x.float().to(device) for x in inputs]
                     inputs = torch.from_numpy(np.array(inputs).astype(np.float32)).to(device)
@@ -290,10 +293,12 @@ def train(trainLoader, testLoader, model, optimizer, scheduler, criterion, save_
                 loss.backward()
 
                 preds = torch.argmax(outputs, 1).cpu()
+                probs = nn.functional.softmax(outputs, 1)[:, 1].cpu()
                 labels = labels.cpu()
                 total += labels.size(0)
                 correct += (preds == labels).sum().item()
                 scores.append(loss.cpu().detach().numpy())
+                all_probs.append(probs.detach().numpy())
                 all_preds.append(preds.numpy())
                 all_labels.append(labels.numpy())
 
@@ -301,9 +306,9 @@ def train(trainLoader, testLoader, model, optimizer, scheduler, criterion, save_
             acc = correct / total * 100
             scheduler.step(score)
 
-            all_preds = np.array(all_preds).reshape(-1)
-            all_labels = np.array(all_labels).reshape(-1)
-            confMat = confusion_matrix(all_labels, all_preds)
+            all_preds = np.concatenate(all_preds).reshape(-1)
+            all_labels = np.concatenate(all_labels).reshape(-1)
+            confMat = confusion_matrix(all_labels, all_preds, np.arange(num_classes))
             df_cm = pd.DataFrame(confMat, index=[i for i in range(num_classes)],
                                  columns=[i for i in range(num_classes)])
             print("Test confusion matrix: ")
@@ -323,13 +328,115 @@ def train(trainLoader, testLoader, model, optimizer, scheduler, criterion, save_
 
             test_loss.append(score)
             test_acc.append(acc)
-            test_step.append(step)
+            # test_step.append(step)
+
+            # if auc_score > best_auc_score or (auc_score == best_auc_score and val_accs > best_acc):
+            if score < best_val_loss or (score == best_val_loss and acc > best_acc):
+                save_path = os.path.join(save_dir, 'epoch_' + str(epoch) + '.pt')
+                torch.save(model.state_dict(), save_path)
+                best_val_loss = score
+                best_acc = acc
+                best_epoch = epoch + 1
+
         else:
             scheduler.step(score)
         print("=" * 50)
 
-        if epoch % 5 == 0:
-            torch.save(model.state_dict(), os.path.join(save_dir, 'epoch_' + str(epoch) + '.pt'))
+        # if epoch % 5 == 0:
+        #     torch.save(model.state_dict(), os.path.join(save_dir, 'epoch_' + str(epoch) + '.pt'))
+
+    # Retrain on train_val dataset
+    train_full_loss = []
+    train_full_acc = []
+    for epoch in tqdm(range(start_epoch, best_epoch)):
+        print('Epoch {}/{}'.format(epoch + 1, best_epoch))
+        print('-' * 10)
+
+        # Training phase
+        model_copy.train()
+        all_preds = []
+        all_probs = []
+        all_labels = []
+
+        running_loss = 0.0
+        running_corrects = 0
+        itr = 0
+        s_time = time.time()
+
+        for sample_batch in trainValLoader:
+            # inputs, labels = sample_batch["cubes"], sample_batch["label"]
+            inputs, labels = sample_batch
+            if isinstance(inputs, list):
+                inputs = torch.from_numpy(np.array(inputs).astype(np.float32)).to(device)
+                labels = torch.from_numpy(np.array(labels).astype(np.int)).to(device)
+            else:
+                inputs = inputs.float().to(device)
+                labels = labels.to(device)
+
+            # cube_size = inputs.shape[2]
+            # img_grid = torchvision.utils.make_grid(inputs[:, :, cube_size // 2])
+            # writer.add_image("train_images", img_grid)
+            # writer.add_graph(model, inputs)
+
+            # zero the parameter gradients
+            optimizer.zero_grad()
+            # forward pass
+            outputs = model_copy(inputs)
+            loss = criterion(outputs, labels)
+            _, preds = torch.max(outputs, 1)
+            probs = nn.functional.softmax(outputs, 1)[:, 1]
+            all_probs.append(probs.detach().cpu().numpy())
+            all_preds.append(preds.cpu().numpy())
+            all_labels.append(labels.cpu().numpy())
+
+            # print batch result
+            lr = [group['lr'] for group in optimizer.param_groups]
+            if itr % print_per_iteration == 0:
+                e_time = time.time()
+                t = e_time - s_time
+                acc = torch.sum(preds == labels.data).double() / len(preds)
+                print("TrainVal: {:}: EPOCH{:03d} {:}Itr{:}/{:} ({:.2f}s/itr) Train: acc {:3.2f}, loss {:2.4f}, lr {:s}".format(
+                    datetime.now(), epoch, int(print_per_iteration), itr // print_per_iteration,
+                                                                     len(trainLoader) // print_per_iteration, t,
+                    acc.item(), loss.item(), str(lr)))
+
+            # statistics
+            running_loss += loss.item() * inputs.size(0)
+            running_corrects += torch.sum(preds == labels.data)
+            itr += 1
+
+            # backward + optimize only if in training phase
+            loss.backward()
+            optimizer.step()
+
+        print("=" * 50)
+
+        epoch_loss = running_loss / len(trainLoader.dataset)
+        epoch_acc = running_corrects.double() / len(trainLoader.dataset)
+
+        all_preds = np.concatenate(all_preds).reshape(-1)
+        all_labels = np.concatenate(all_labels).reshape(-1)
+        confMat = confusion_matrix(all_labels, all_preds, np.arange(num_classes))
+        df_cm = pd.DataFrame(confMat, index=[i for i in range(num_classes)],
+                             columns=[i for i in range(num_classes)])
+        print("Train confusion matrix: ")
+        print(df_cm)
+        fig = plt.figure()
+        sns.heatmap(df_cm, annot=True, cmap="YlGnBu")
+        plt.savefig(os.path.join(plot_folder, "train_full_confusion_matrix_ep{:d}.png".format(epoch)), bbox_inches="tight",
+                    dpi=200)
+        plt.close(fig)
+
+        writer.add_scalar('Loss/train_full', epoch_loss, epoch)
+        writer.add_scalar('Accuracy/train_full', epoch_acc, epoch)
+
+        train_full_loss.append(epoch_loss)
+        train_full_acc.append(epoch_acc)
+
+        print("epoch {:d} | avg training loss {:.6f} | avg training acc {:.2f}".format(
+            epoch, epoch_loss, epoch_acc))
+
+    torch.save(model_copy.state_dict(), os.path.join(save_dir, 'full_epoch_' + str(best_epoch) + '.pt'))
 
     if testLoader:
         # start_from_step = 200
@@ -338,6 +445,7 @@ def train(trainLoader, testLoader, model, optimizer, scheduler, criterion, save_
         # ids = np.array(test_step) > start_from_step
         # plt.plot(np.array(test_step)[ids], np.array(test_loss)[ids], label="Test loss")
 
+        plt.figure()
         plt.plot(train_loss, label="Train loss")
         plt.plot(test_loss, label="Test loss")
         plt.legend()
@@ -346,9 +454,10 @@ def train(trainLoader, testLoader, model, optimizer, scheduler, criterion, save_
         # plt.yscale("log")
         plot_name = "loss curve_ep{:d}.png".format(epochs)
         plt.savefig(os.path.join(save_dir, plot_name), dpi=200, bbox_inches="tight")
-        plt.show()
+        # plt.show()
+        plt.close()
 
-
+        plt.figure()
         plt.plot(train_acc, label="Train acc")
         plt.plot(test_acc, label="Test acc")
         plt.legend()
@@ -357,9 +466,10 @@ def train(trainLoader, testLoader, model, optimizer, scheduler, criterion, save_
         # plt.yscale("log")
         plot_name = "acc curve_ep{:d}.png".format(epochs)
         plt.savefig(os.path.join(save_dir, plot_name), dpi=200, bbox_inches="tight")
-        plt.show()
+        # plt.show()
+        plt.close()
 
-    # return model
+    return model_copy, best_epoch
 
 def test(testLoader, model, criterion, save_folder, start_epoch):
 
@@ -373,9 +483,11 @@ def test(testLoader, model, criterion, save_folder, start_epoch):
     correct = 0
     total = 0
     all_preds = []
+    all_probs = []
     all_labels = []
     for sample_batch in tqdm(testLoader):
-        inputs, labels = sample_batch["cubes"], sample_batch["label"]
+        # inputs, labels = sample_batch["cubes"], sample_batch["label"]
+        inputs, labels = sample_batch
         if isinstance(inputs, list):
             # inputs = [x.float().to(device) for x in inputs]
             inputs = torch.from_numpy(np.array(inputs).astype(np.float32)).to(device)
@@ -388,19 +500,25 @@ def test(testLoader, model, criterion, save_folder, start_epoch):
         loss.backward()
 
         preds = torch.argmax(outputs, 1).cpu()
+        probs = nn.functional.softmax(outputs, 1)[:, 1].cpu()
         labels = labels.cpu()
         total += labels.size(0)
         correct += (preds == labels).sum().item()
         scores.append(loss.cpu().detach().numpy())
+        all_probs.append(probs.detach().numpy())
         all_preds.append(preds.numpy())
         all_labels.append(labels.numpy())
 
     score = np.mean(scores)
     acc = correct / total * 100
 
-    all_preds = np.array(all_preds).reshape(-1)
-    all_labels = np.array(all_labels).reshape(-1)
-    confMat = confusion_matrix(all_labels, all_preds)
+    all_preds = np.concatenate(all_preds).reshape(-1)
+    all_labels = np.concatenate(all_labels).reshape(-1)
+
+    np.savez_compressed(os.path.join(save_folder, "preds.npz"),
+                        l=all_labels, p=all_probs)
+
+    confMat = confusion_matrix(all_labels, all_preds, np.arange(num_classes))
     df_cm = pd.DataFrame(confMat, index=[i for i in range(num_classes)],
                          columns=[i for i in range(num_classes)])
     print("Test confusion matrix: ")
@@ -529,6 +647,29 @@ def main():
     model_name = args.model
     epochs = args.epochs
     batch_size = args.batch_size
+    lr = args.learning_rate
+
+    ## ----- Create logger ----- ##
+    model_folder = "{:s}_{:s}".format(model_name, extra_str) if len(extra_str) > 0 else model_name
+    if args.kfold: model_folder += ".kfold{:d}".format(splitId)
+    save_dir = os.path.join(save_dir, model_folder)
+    os.makedirs(save_dir, exist_ok=True)
+    log_file = "train.log" if train_flag else "test.log"
+    log_path = os.path.join(save_dir, log_file)
+    sys.stdout = Logger(log_path)
+
+    bind = lambda x: "--{:s}={:s}".format(str(x[0]), str(x[1]))
+    print("=" * 100)
+    print("Running at: {:s}".format(str(datetime.now())))
+    print("Working in directory: {:s}\n".format(save_dir))
+    print("Run experiments: ")
+    print("python {:s}".format(" ".join(sys.argv)))
+    print("Full arguments: ")
+    print("{:s}\n".format(" ".join([bind(i) for i in vars(args).items()])))
+
+    global writer
+    writer = SummaryWriter(os.path.join(save_dir, "run"))
+
 
     ## ----- Create datasets and dataLoaders ----- ##
     if datasource == "methodist":
@@ -536,11 +677,22 @@ def main():
         from utils.model_utils import collate
 
         config = IncidentalConfig()
+        lungData = LungDataset(config)
         kfold = KFold(n_splits=args.kfold, random_state=42) if kfold is not None else None
-        trainData = LungDataset(config, "train", kfold=kfold, splitId=splitId)
-        trainLoader = DataLoader(trainData, batch_size=batch_size, shuffle=True, collate_fn=collate)
-        valData = LungDataset(config, "val", kfold=kfold, splitId=splitId)
-        valLoader = DataLoader(valData, batch_size=batch_size, shuffle=False)
+        datasets = lungData.get_datasets(kfold=kfold, splitId=splitId)
+        # kfold = len(lungData.y) if kfold is None else args.kfold
+        # kfold = KFold(n_splits=kfold, random_state=42)
+
+        # trainLoader = DataLoader(datasets["train"], batch_size=batch_size, shuffle=True, collate_fn=collate)
+        trainLoader = DataLoader(datasets["train"], batch_size=batch_size, shuffle=True)
+        trainValLoader = DataLoader(datasets["train_val"], batch_size=batch_size, shuffle=True)
+        valLoader = DataLoader(datasets["val"], batch_size=batch_size, shuffle=False)
+        testLoader = DataLoader(datasets["test"], batch_size=batch_size, shuffle=False)
+
+        # trainData = LungDataset(config, "train", kfold=kfold, splitId=splitId)
+        # trainLoader = DataLoader(trainData, batch_size=batch_size, shuffle=True, collate_fn=collate)
+        # valData = LungDataset(config, "val", kfold=kfold, splitId=splitId)
+        # valLoader = DataLoader(valData, batch_size=batch_size, shuffle=False)
 
 
         # pos_label_file = "/data/pyuan2/Methodist_incidental/data_Ben/labeled/pos_labels_norm.csv"
@@ -571,10 +723,10 @@ def main():
         valData = LUNA16(train=False)
         valLoader = DataLoader(valData, batch_size=1, shuffle=False)
 
-    print("Shape of train_x is: ", (len(trainData), 1,) + (config.CUBE_SIZE,) * 3)
-    print("Shape of train_y is: ", (len(trainData),))
-    print("Shape of val_x is: ", (len(valData), 1,) + (config.CUBE_SIZE,) * 3)
-    print("Shape of val_y is: ", (len(valData),))
+    print("Shape of train_x is: ", (len(datasets["train"]), 1,) + (config.CUBE_SIZE,) * 3)
+    print("Shape of train_y is: ", (len(datasets["train"]),))
+    print("Shape of val_x is: ", (len(datasets["val"]), 1,) + (config.CUBE_SIZE,) * 3)
+    print("Shape of val_y is: ", (len(datasets["val"]),))
     config.display()
 
     ## ----- Construct models ----- ##
@@ -600,8 +752,7 @@ def main():
     #     save_dir = "model/classification_LUNA16/"
     # save_dir += "{:s}_{:s}".format(model_name, extra_str)
 
-    save_dir = os.path.join(save_dir, "{:s}_{:s}".format(model_name, extra_str))
-    os.makedirs(save_dir, exist_ok=True)
+
 
     if load_model:
         model_list = [m for m in os.listdir(load_model) if m.endswith("pt")]
@@ -630,8 +781,8 @@ def main():
     # Detect if we have a GPU available
     global device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    if torch.cuda.is_available():
-        print("using GPU now!")
+    # if torch.cuda.is_available():
+    #     print("using GPU now!")
 
     # Send the model to GPU
     if torch.cuda.device_count() > 1:
@@ -645,28 +796,10 @@ def main():
     # criterion = RMSLELoss()
     criterion = nn.CrossEntropyLoss()
 
-    optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9, weight_decay=0.001)
+    optimizer = optim.SGD(model.parameters(), lr=0.0001, momentum=0.9, weight_decay=0.01)
     # optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=0.1)
     # optimizer = optim.Adam(model.parameters(), lr=0.001)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, cooldown=10, min_lr=0.0001, patience=100)
-    
-    ## ----- Create logger ----- ##
-    os.makedirs(save_dir, exist_ok=True)
-    log_file = "train.log" if train_flag else "test.log"
-    log_path = os.path.join(save_dir, log_file)
-    sys.stdout = Logger(log_path)
-
-    bind = lambda x: "--{:s}={:s}".format(str(x[0]), str(x[1]))
-    print("=" * 100)
-    print("Running at: {:s}".format(str(datetime.now())))
-    print("Working in directory: {:s}\n".format(save_dir))
-    print("Run experiments: ")
-    print("python {:s}".format(" ".join(sys.argv)))
-    print("Full arguments: ")
-    print("{:s}\n".format(" ".join([bind(i) for i in vars(args).items()])))
-    
-    global writer
-    writer = SummaryWriter(os.path.join(save_dir, "run"))
 
     # scaler = RobustScaler()
     # train_x = scaler.fit_transform(train_x)
@@ -701,9 +834,10 @@ def main():
     
     ## ----- Training or test ----- ##
     if train_flag:
-        train(trainLoader, valLoader, model, optimizer, scheduler, criterion, save_dir, epochs, start_epoch)
+        model, start_epoch = train(trainLoader, valLoader, trainValLoader, model, optimizer, scheduler, criterion, save_dir, epochs, start_epoch)
+        test(testLoader, model, criterion, save_dir, start_epoch)
     else:
-        test(valLoader, model, criterion, save_dir, start_epoch)
+        test(testLoader, model, criterion, save_dir, start_epoch)
 
 
     # # Create dataLoader for the final test data
