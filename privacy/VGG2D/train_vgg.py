@@ -201,7 +201,7 @@ class IncidentalData():
         return cat
 
     def load_image(self, imageId):
-        from utils import lumTrans
+        from utils.model_utils import lumTrans
         imgInfo = self.imageInfo[imageId]
         imgPath, thickness, spacing = imgInfo["imagePath"], imgInfo["sliceThickness"], imgInfo["pixelSpacing"]
         images = np.load(imgPath)["image"]
@@ -210,7 +210,7 @@ class IncidentalData():
         return images
 
     def get_slices(self, imageId, size):
-        from utils import extract_cube
+        from utils.model_utils import extract_cube
         pos = self.load_pos(imageId)
         slices = []
         for i,p in enumerate(pos):
@@ -221,7 +221,7 @@ class IncidentalData():
         return slices
 
     def load_pos(self, imageId):
-        from utils import resample_pos
+        from utils.model_utils import resample_pos
         imgInfo = self.imageInfo[imageId]
         thickness, spacing = imgInfo["sliceThickness"], imgInfo["pixelSpacing"]
         pstr = imgInfo["pstr"]

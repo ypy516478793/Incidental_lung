@@ -1,4 +1,4 @@
-from utils import read_slices, load_dicom, resample_image
+from utils.model_utils import read_slices, load_dicom, resample_image
 from natsort import natsorted
 import pandas as pd
 import numpy as np
@@ -176,7 +176,7 @@ def check_num_nodules(file = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_
 
 def move_npz(save_dir, data_folder):
     from tqdm import tqdm
-    from shutil import copytree, copyfile
+    from shutil import copyfile
     file = os.path.join(save_dir, "move_folder.csv")
     with open(file, "r") as f:
         lines = f.readlines()

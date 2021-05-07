@@ -1,4 +1,4 @@
-from utils import extract_cube, resample_pos, lumTrans, collate, plot_bbox, center_stack
+from utils.model_utils import extract_cube, resample_pos, lumTrans, collate, plot_bbox, center_stack
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset
 

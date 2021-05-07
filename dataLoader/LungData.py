@@ -1,4 +1,4 @@
-from utils import extract_cube, resample_pos, lumTrans, collate, plot_bbox, center_stack
+from utils.model_utils import extract_cube, resample_pos, lumTrans, collate, plot_bbox, center_stack
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset
 
@@ -211,9 +211,9 @@ class LungDataset(Dataset):
 
 if __name__ == '__main__':
     rootFolder = "data_king/labeled/"
-    pos_label_file = "data/pos_labels.csv"
+    pos_label_file = "../data/pos_labels.csv"
     # cat_label_file = "data/Lung Nodule Clinical Data_Min Kim - Added Variables 10-2-2020.xlsx"
-    cat_label_file = "data/Lung Nodule Clinical Data_Min Kim (No name).xlsx"
+    cat_label_file = "../data/Lung Nodule Clinical Data_Min Kim (No name).xlsx"
     cube_size = 64
     lungData = LungDataset(rootFolder, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
                            cube_size=cube_size, train=None, screen=True, clinical=True)

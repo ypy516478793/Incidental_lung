@@ -1,6 +1,6 @@
 
-from IncidentalData import LungDataset
-from utils import plot_bbox, center_stack
+from dataLoader.IncidentalData import LungDataset
+from utils.model_utils import plot_bbox, center_stack
 
 import numpy as np
 import os

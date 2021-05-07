@@ -62,7 +62,7 @@ def organize_img(folder):
                 copyfile(img_file, dst_file)
 
 def show_nodules(lungData, crop_size=64, train=True):
-    from utils import plot_bbox, center_stack
+    from utils.model_utils import plot_bbox, center_stack
     center = crop_size // 2
     trainStr = "train" if train else "test"
     for id in tqdm(lungData.imageIds):
@@ -137,7 +137,7 @@ def create_dataset_details(root_folder):
     df['MRN'] = df['MRN'].apply(lambda x: '{0:0>9}'.format(x))
     gt_df = pd.read_csv(os.path.join(root_folder, "gt_labels.csv"))
 
-    from IncidentalData import LungDataset
+    from dataLoader.IncidentalData import LungDataset
     pos_label_file = "I:\Lung_ai\gt_labels.csv"
     cat_label_file = "I:\Lung_ai\Lung Nodule Clinical Data_Min Kim (No name).xlsx"
     cube_size = 64
@@ -226,7 +226,7 @@ def prepare_for_detector(rootFolder, saveFolder="Detector_data"):
     pos_label_file = "data/pos_labels.csv"
     cat_label_file = "data/Lung Nodule Clinical Data_Min Kim (No name).xlsx"
     cube_size = 64
-    from IncidentalData import LungDataset
+    from dataLoader.IncidentalData import LungDataset
     lungData = LungDataset(rootFolder, labeled_only=True, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
                            cube_size=cube_size, reload=False, train=None, screen=False)
 

@@ -1,6 +1,4 @@
-from utils import plot_bbox
-import matplotlib.patches as patches
-import matplotlib.pyplot as plt
+from utils.model_utils import plot_bbox
 import pandas as pd
 import numpy as np
 import os

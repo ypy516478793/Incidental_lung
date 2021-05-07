@@ -9,6 +9,60 @@ import numpy as np
 import torch
 import os
 
+class LunaConfig(object):
+    DATA_DIR = "../../"
+    TRAIN_DATA_DIR = ['data/preprocessed/subset0/',
+                      'data/preprocessed/subset1/',
+                      'data/preprocessed/subset2/',
+                      'data/preprocessed/subset3/',
+                      'data/preprocessed/subset4/',
+                      'data/preprocessed/subset5/',
+                      'data/preprocessed/subset6/',
+                      'data/preprocessed/subset7/']
+    VAL_DATA_DIR = ['data/preprocessed/subset8/']
+    TEST_DATA_DIR = ['data/preprocessed/subset9/']
+    BLACK_LIST = []
+
+    ANCHORS = [5., 10., 20.]
+    # ANCHORS = [5., 10., 20.]  # [ 10.0, 30.0, 60.]
+    CHANNEL = 1
+    CROP_SIZE = [96, 96, 96]
+    STRIDE = 4
+    MAX_STRIDE = 16
+    NUM_NEG = 800
+    TH_NEG = 0.02
+    TH_POS_TRAIN = 0.5
+    TH_POS_VAL = 1
+    NUM_HARD = 2
+    BOUND_SIZE = 12
+    RESO = 1
+    SIZE_LIM = 2.5  # 3 #6. #mm
+    SIZE_LIM2 = 10  # 30
+    SIZE_LIM3 = 20  # 40
+    AUG_SCALE = True
+    R_RAND_CROP = 0.3
+    PAD_VALUE = 170  # previous 170
+    AUGTYPE = {"flip": True, "swap": False, "scale": True, "rotate": False}
+
+    CONF_TH = 4
+    NMS_TH = 0.3
+    DETECT_TH = 0.5
+
+    SIDE_LEN = 144
+    MARGIN = 32
+
+    ORIGIN_SCALE = False
+
+    def display(self):
+        """Display Configuration values."""
+        print("\nConfigurations:")
+        for a in dir(self):
+            if not a.startswith("__") and not callable(getattr(self, a)):
+                print("{:30} {}".format(a, getattr(self, a)))
+        print("\n")
+
+
+
 class LUNA16(Dataset):
     def __init__(self, rootFolder="/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/LUNA16/classification/", train=True):
         """

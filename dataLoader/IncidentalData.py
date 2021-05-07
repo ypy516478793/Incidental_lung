@@ -1,16 +1,9 @@
-from collections import defaultdict
-from natsort import natsorted
 from tqdm import tqdm
-from utils import check_fileType, read_slices, load_dicom, extract_cube, resample_image, resample_pos, make_lungmask, lumTrans
+from utils.model_utils import extract_cube, lumTrans
 from torch.utils.data import Dataset
-from sklearn.cluster import KMeans
-from skimage import morphology
-from skimage import measure
-from skimage.transform import resize
 from sklearn.model_selection import train_test_split
+from sklearn.model_selection import KFold
 
-import matplotlib.pyplot as plt
-import pydicom as dicom
 import pandas as pd
 import numpy as np
 import torch
@@ -18,37 +11,120 @@ import torch
 import os
 
 
-exclude = ["001030196-20121205", "005520101-20130316", "009453325-20130820", "034276428-20131212",
-           "036568905-20150714", "038654273-20160324", "011389806-20160907", "015995871-20160929",
-           "052393550-20161208", "033204314-20170207", "017478009-20170616", "027456904-20180209",
-           "041293960-20170227", "000033167-20131213", "022528020-20180525", "025432105-20180730",
-           "000361956-20180625"]
+class IncidentalConfig(object):
+    CROP_LUNG = True
+    MASK_LUNG = True
+    PET_CT = None
+    # ROOT_DIR = "/home/cougarnet.uh.edu/pyuan2/Datasets/Methodist_incidental/data_kim/"
+    # ROOT_DIR = "/home/cougarnet.uh.edu/pyuan2/Datasets/Methodist_incidental/data_Ben/"
+    # ROOT_DIR = "/home/cougarnet.uh.edu/pyuan2/Datasets/Methodist_incidental/data_unlabeled/"
+    # ROOT_DIR = "/home/cougarnet.uh.edu/pyuan2/Projects/DeepLung-3D_Lung_Nodule_Detection/Methodist_incidental/data_Ben"
+    # DATA_DIR = "/home/cougarnet.uh.edu/pyuan2/Projects/DeepLung-3D_Lung_Nodule_Detection/Methodist_incidental/data_Ben/maskCropDebug"
+    # DATA_DIR = "/home/cougarnet.uh.edu/pyuan2/Projects/DeepLung-3D_Lung_Nodule_Detection/Methodist_incidental/data_unlabeled/masked_with_crop"
+    # DATA_DIR = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/data/"
+    # DATA_DIR = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/data_king/labeled/"
+    # DATA_DIR = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/data_king/unlabeled/"
+    # DATA_DIR = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/data/raw_data/unlabeled/"
+    # DATA_DIR = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/data_mamta/processed_data/unlabeled/"
+    INFO_FILE = "CTinfo.npz"
+    # POS_LABEL_FILE = "pos_labels_norm.csv"
+    # POS_LABEL_FILE = "pos_labels_norm.csv"
+    # POS_LABEL_FILE = "gt_labels_checklist.xlsx"
+    # POS_LABEL_FILE = "Predicted_labels_checklist_Kim_TC.xlsx"
+    # POS_LABEL_FILE = None
+    # CAT_LABEL_FILE = None
+
+    DATA_DIR = "/data/pyuan2/Methodist_incidental/data_Ben/labeled/"
+    POS_LABEL_FILE = "/data/pyuan2/Methodist_incidental/data_Ben/labeled/pos_labels_norm.csv"
+    CAT_LABEL_FILE = "../data/Lung Nodule Clinical Data_Min Kim - Added Variables 10-2-2020.xlsx"
+
+    BLACK_LIST = ["001030196-20121205", "005520101-20130316", "009453325-20130820", "034276428-20131212",
+                  "036568905-20150714", "038654273-20160324", "011389806-20160907", "015995871-20160929",
+                  "052393550-20161208", "033204314-20170207", "017478009-20170616", "027456904-20180209",
+                  "041293960-20170227", "000033167-20131213", "022528020-20180525", "025432105-20180730",
+                  "000361956-20180625"]
+    LOAD_CLINICAL = False
+
+    CUBE_SIZE = 64
+
+    ANCHORS = [10.0, 30.0, 60.0]
+    MAX_NODULE_SIZE = 60
+    # ANCHORS = [5., 10., 20.]  # [ 10.0, 30.0, 60.]
+    CHANNEL = 1
+    CROP_SIZE = [96, 96, 96]
+    STRIDE = 4
+    MAX_STRIDE = 16
+    NUM_NEG = 800
+    TH_NEG = 0.02
+    TH_POS_TRAIN = 0.5
+    TH_POS_VAL = 1
+    NUM_HARD = 2
+    BOUND_SIZE = 12
+    RESO = 1
+    SIZE_LIM = 2.5  # 3 #6. #mm
+    SIZE_LIM2 = 10  # 30
+    SIZE_LIM3 = 20  # 40
+    AUG_SCALE = True
+    R_RAND_CROP = 0.3
+    PAD_VALUE = 0   # previous 170
+    AUGTYPE = {"flip": False, "swap": False, "scale": False, "rotate": False, "contrast": False, "bright": False, "sharp": False, "splice": False}
+    # AUGTYPE = {"flip": True, "swap": True, "scale": True, "rotate": True}
+    KFOLD = None
+    KFOLD_SEED = None
+
+    CONF_TH = 4
+    NMS_TH = 0.3
+    DETECT_TH = 0.5
+
+    SIDE_LEN = 144
+    MARGIN = 32
+
+    ORIGIN_SCALE = False
+    SPLIT_SEED = None
+    LIMIT_TRAIN = None
+    SPLIT_ID = None
+
+    def display(self):
+        """Display Configuration values."""
+        print("\nConfigurations:")
+        for a in dir(self):
+            if not a.startswith("__") and not callable(getattr(self, a)):
+                print("{:30} {}".format(a, getattr(self, a)))
+        print("\n")
 
 
 class LungDataset(Dataset):
-    def __init__(self, rootFolder, pos_label_file=None, cat_label_file=None, cube_size=64,
-                 train=None, screen=True, clinical=False):
-        self.imageInfo = []
+    # def __init__(self, rootFolder, pos_label_file=None, cat_label_file=None, cube_size=64,
+    #              train=None, screen=True, clinical=False):
+    # def __init__(self, root_dir, POS_LABEL_FILE, CAT_LABEL_FILE, config, subset="train"):
+    def __init__(self, config, subset="train", kfold=None, splitId=None):
+        # assert (subset == "train" or subset == "val" or subset == "test" or subset == "inference")
+        self.config = config
+        self.subset = subset
         self._imageIds = []
-        self.cube_size = cube_size
-        if pos_label_file:
+        # Load position label file
+        pos_label_file = config.POS_LABEL_FILE
+        if pos_label_file is not None:
             self.pos_df = pd.read_csv(pos_label_file, dtype={"date": str})
+        # Load category label file
+        cat_label_file = config.CAT_LABEL_FILE
         if cat_label_file:
             self.cat_df = pd.read_excel(cat_label_file, dtype={"MRN": str}, sheet_name='Sheet1')
             self.additional_df = pd.read_excel(cat_label_file, dtype={"MRN": str}, sheet_name='Sheet2')
             cat_key = [i for i in self.cat_df.columns if i.startswith("Category Of")][0]
             self.cats = self.cat_df[cat_key]
-        self.clinical_preprocessing()
-        self.load_clinical = clinical
-        self.imageInfo = np.load(os.path.join(rootFolder, "CTinfo.npz"), allow_pickle=True)["info"]
+        # Process clnical information
+        if config.LOAD_CLINICAL:
+            self.clinical_preprocessing()
+        # Process imageInfo (Load subset)
+        self.imageInfo = np.load(os.path.join(config.DATA_DIR, "CTinfo.npz"), allow_pickle=True)["info"]
         self.imageInfo = np.array(self.imageInfo)
-        # self.imageInfo = self.imageInfo[:3]
-        self.remove_duplicate()
+        self.__remove_duplicate__()
         self.__check_labels__()
-        if screen:
-            self.screen()
-        if train is not None:
-            self.load_subset(train)
+        self.__screen__()
+        self.load_subset(subset, random_state=config.SPLIT_SEED, limit_train_size=config.LIMIT_TRAIN,
+                         kfold=kfold, splitId=splitId)
+        # Prepare dataset index mapping
         self.prepare()
 
     def __len__(self):
@@ -60,29 +136,26 @@ class LungDataset(Dataset):
 
         image = self.load_image(imageId)
         pos = self.load_pos(imageId)
-        if len(pos) == 0:
-            print("Error: no data!")
-        cubes = self.get_cube(imageId, self.cube_size)
+        assert len(pos) > 0, "Error: no data!"
+        cubes = self.get_cube(imageId, self.config.CUBE_SIZE)
         label = self.load_cat(imageId)
         # if len(feature) > 1:
         #     assert label == 1, "Must be benign cases!"
         #     feature = feature[[np.random.randint(len(feature))]]
 
-        # if self.load_clinical:
-        #     feature = (feature, feature_clinical)
 
         sample = {"image": image,
                   "pos": pos,
                   "cubes": cubes,
                   "label": label}
 
-        if self.load_clinical:
+        if self.config.LOAD_CLINICAL:
             clinical = self.get_clinical(imageId).astype(np.float32)
             sample = sample.update({"clinical": clinical})
 
         return sample
 
-    def remove_duplicate(self):
+    def __remove_duplicate__(self):
         for i, info in enumerate(self.imageInfo):
             if info["date"] == "":
                 info["date"] = info["imagePath"].strip(".npz").split("-")[-1]
@@ -92,7 +165,7 @@ class LungDataset(Dataset):
         from collections import Counter
         cnt = Counter(identifier_set)
         for k, v in cnt.items():
-            if k in exclude:
+            if k in self.config.BLACK_LIST:
                 indices = [i for i, x in enumerate(identifier_set) if x == k]
                 remove_ids = remove_ids + indices
             elif v > 1:
@@ -107,118 +180,36 @@ class LungDataset(Dataset):
             existId = (self.pos_df["patient"] == pstr) & (self.pos_df["date"] == dstr)
             assert existId.sum() > 0, "no matches, pstr {:}, dstr {:}".format(pstr, dstr)
 
-    # def add_scan(self, pstr, patientID, date, series, imgPath, sliceThickness, pixelSpacing, scanID, **kwargs):
-    #     '''
-    #     Add current scan meta information into global list
-    #     :param: meta information for current scan
-    #     :return: scan_info (in dictionary)
-    #     '''
-    #     scanInfo = {
-    #         "pstr": pstr,
-    #         "patientID": patientID,
-    #         "scanID": scanID,
-    #         "date": date,
-    #         "series": series,
-    #         "imagePath": imgPath,
-    #         "sliceThickness": sliceThickness,
-    #         "pixelSpacing": pixelSpacing,
-    #     }
-    #     scanInfo.update(kwargs)
-    #     self.imageInfo.append(scanInfo)
-    #     return scanInfo
-    #
-    # def load_from_dicom(self, rootFolder, labeled_only=True):
-    #     '''
-    #     load image from dicom files
-    #     :param rootFolder: root folder of the data
-    #     :return: None
-    #     '''
-    #     no_CTscans = []
-    #     matchMoreThanOne = []
-    #     all_patients = [i for i in os.listdir(rootFolder) if
-    #                     os.path.isdir(os.path.join(rootFolder, i)) and i[:4] == "Lung"]
-    #     all_patients = natsorted(all_patients)
-    #
-    #     # Loop over all patients
-    #     for i in range(len(all_patients)):
-    #         patientFolder = os.path.join(rootFolder, all_patients[i])
-    #         all_dates = [d for d in os.listdir(patientFolder) if
-    #                     os.path.isdir(os.path.join(patientFolder, d)) and d[-4:] == "data"]
-    #         # Loop over all dates
-    #         for j in range(len(all_dates)):
-    #             imgFolder = os.path.join(rootFolder, all_patients[i], all_dates[j])
-    #             pstr = all_patients[i].split("-")[0].split("_")[1]
-    #             dstr = all_dates[j].split("_")[0]
-    #             pID = all_patients[i].split("-")[1].split("_")[0]
-    #             imagePath = os.path.join(rootFolder, all_patients[i], "{:s}-{:s}.npz".format(pID, dstr))
-    #             if imagePath in [d["imagePath"] for d in self.imageInfo]:
-    #                 continue
-    #             # find series of only labeled data
-    #             if labeled_only:
-    #                 existId = (self.pos_df["patient"] == pstr) & (self.pos_df["date"] == dstr)
-    #                 if existId.sum() == 0:
-    #                     continue
-    #                 else:
-    #                     series = self.pos_df[existId]["series"].to_numpy()[0]
-    #                     if series == "Lung_Bone+ 50cm" or series == "LUNG_BONE PLUS 50cm":
-    #                         series = series.replace("_", "/")
-    #                     print("\n>>>>>>> Start to load {:s} at date {:s}".format(pstr, dstr))
-    #
-    #             # Distribute all slices to different series
-    #             patientID, dateDicom, seriesDict = load_dicom(imgFolder)
-    #             assert patientID == pID, "PatientID does not match!!"
-    #             assert dateDicom == dstr, "Date does not match!!"
-    #             print("All series types: ", list(seriesDict.keys()))
-    #
-    #             # find series of unlabeled data based on the matches pattern (self.matches)
-    #             if not labeled_only:
-    #                 lungSeries = [i for i in list(seriesDict.keys()) if np.any([m in i for m in self.matches])]
-    #                 if len(lungSeries) == 0:
-    #                     print("No lung scans found!")
-    #                     no_CTscans.append(seriesDict)
-    #                 else:
-    #                     if len(lungSeries) > 1:
-    #                         print("More than 1 lung scans found!")
-    #                         id = np.argmin([len(i) for i in lungSeries])
-    #                         series = lungSeries[id]
-    #                         matchMoreThanOne.append(lungSeries)
-    #                     else:
-    #                         series = lungSeries[0]
-    #                     print("Lung series: ", series)
-    #
-    #             # Load and save lung series
-    #             slices = seriesDict[series]
-    #             image, sliceThickness, pixelSpacing, scanID = read_slices(slices)
-    #             # imagePath = os.path.join(rootFolder, all_patients[i], "{:s}-{:s}.npz".format(patientID, dateDicom))
-    #             scanInfo = self.add_scan(pstr, patientID, dateDicom, series, imagePath,
-    #                                      sliceThickness, pixelSpacing, scanID)
-    #             new_image, new_spacing = resample_image(image, sliceThickness, pixelSpacing)
-    #             np.savez_compressed(imagePath, image=new_image, info=scanInfo)
-    #             print("Save scan to {:s}".format(imagePath))
-    #
-    #             print("\nFinish loading patient {:s} at date {:s} <<<<<<<".format(patientID, dateDicom))
-    #
-    #             CTinfoPath = os.path.join(rootFolder, "CTinfo.npz")
-    #             np.savez_compressed(CTinfoPath, info=self.imageInfo)
-    #             print("Save all scan infos to {:s}".format(CTinfoPath))
-    #
-    #     print("-" * 30 + " CTinfo " + "-" * 30)
-    #     [print(i) for i in self.imageInfo]
+    def load_subset(self, subset, random_state=None, limit_train_size=None, kfold=None, splitId=None):
+        if subset == "inference":
+            infos = self.imageInfo
+        else:
+            ## train/val/test split
+            if random_state is None:
+                random_state = 42
+            if kfold is None:
+                trainInfo, valInfo = train_test_split(self.imageInfo, test_size=0.6, random_state=random_state)
+                valInfo, testInfo = train_test_split(valInfo, test_size=0.5, random_state=random_state)
+            else:
+                assert splitId is not None
+                trainValInfo, testInfo = train_test_split(self.imageInfo, test_size=0.2, random_state=random_state)
+                kf_indices = [(train_index, val_index) for train_index, val_index in kfold.split(trainValInfo)]
+                train_index, val_index = kf_indices[splitId]
+                trainInfo, valInfo = trainValInfo[train_index], trainValInfo[val_index]
 
-    # def load_lung(self, rootFolder, labeled_only, reload=False):
-    #     if reload:
-    #         self.imageInfo = np.load(os.path.join(rootFolder, "CTinfo.npz"), allow_pickle=True)["info"].tolist()
-    #         self.load_from_dicom(rootFolder, labeled_only=labeled_only)
-    #     else:
-    #         try:
-    #             self.imageInfo = np.load(os.path.join(rootFolder, "CTinfo.npz"), allow_pickle=True)["info"]
-    #         except FileNotFoundError:
-    #             self.load_from_dicom(rootFolder, labeled_only=labeled_only)
-    #     self.imageInfo = np.array(self.imageInfo)
 
-    def load_subset(self, train):
-        trainInfo, valInfo = train_test_split(self.imageInfo, random_state=42)
-        self.imageInfo = trainInfo if train else valInfo
+            assert subset == "train" or subset == "val" or subset == "test" or subset =="train_val", "Unknown subset!"
+            if subset == "train":
+                infos = trainInfo
+                if limit_train_size is not None:
+                    infos = infos[:int(limit_train_size * len(infos))]
+            elif subset == "val":
+                infos = valInfo
+            elif subset == "train_val":
+                infos = np.concatenate([trainInfo, valInfo])
+            else:
+                infos = testInfo
+        self.imageInfo = infos
 
     def prepare(self):
         self.num_images = len(self.imageInfo)
@@ -231,7 +222,7 @@ class LungDataset(Dataset):
     def imageIds(self):
         return self._imageIds
 
-    def screen(self):
+    def __screen__(self):
         num_images = len(self.imageInfo)
         mask = np.ones(num_images, dtype=bool)
         for imageId in range(num_images):
@@ -239,21 +230,8 @@ class LungDataset(Dataset):
             cat = self.load_cat(imageId)
             if len(pos) > 1:
             # if len(pos) > 1 and cat == 0:
-            # if len(pos) <= 1:
                 mask[imageId] = False
         self.imageInfo = self.imageInfo[mask]
-
-    # def screen(self):
-    #     num_images = len(self.imageInfo)
-    #     mask = np.ones(num_images, dtype=bool)
-    #     for imageId in range(num_images):
-    #         pos = self.load_pos(imageId)
-    #         cat = self.load_cat(imageId)
-    #         if len(pos) > 1 and cat == 0:
-    #         # if len(pos) > 1:
-    #             mask[imageId] = False
-    #     self.imageInfo = self.imageInfo[mask]
-
 
     def clinical_preprocessing(self):
         dropCols = ["Sex"]
@@ -366,6 +344,10 @@ class LungDataset(Dataset):
 
 
 if __name__ == '__main__':
+
+    writer = SummaryWriter(os.path.join("Visualize", "MethodistFull"))
+    config = IncidentalConfig()
+
     # # rootFolder = "/Users/yuan_pengyu/Downloads/IncidentalLungCTs_sample/"
     # # rootFolder = "data/"
     # rootFolder = "data_king/labeled/"
@@ -455,30 +437,30 @@ if __name__ == '__main__':
 
 
     ## --------------- save central slices with original size --------------- ##
-    from PIL import Image
-    from utils import plot_bbox
-    rootFolder = "data_king/labeled/"
-    pos_label_file = "data/pos_labels.csv"
-    cat_label_file = "data/Lung Nodule Clinical Data_Min Kim - Added Variables 10-2-2020.xlsx"
-    cube_size = 64
-    lungData = LungDataset(rootFolder, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
-                           cube_size=cube_size, train=None, screen=False, clinical=False)
-    saveDir = "isotropic_central_slices"
-    os.makedirs(saveDir, exist_ok=True)
-    for i in tqdm(range(62, len(lungData.imageInfo))):
-        info = lungData.imageInfo[i]
-        save_name = "{:s}_{:s}_{:s}".format(info["pstr"], info["patientID"], info["date"])
-        save_name += "_PET" if info["PET"] == "Y" else ""
-        img = lungData.load_image(i)
-        pos = lungData.load_pos(i)
-        for idx, p in enumerate(pos):
-            z = int(p[2])
-            c_img = img[z]
-            save_dir = os.path.join(saveDir, save_name + "_no{:d}_z{:d}.png".format(idx, z))
-            PILimg = Image.fromarray(c_img)
-            PILimg.save(save_dir)
-            bbox_save_dir = save_dir.replace(".png", "_bbox.png")
-            plot_bbox(img, p, bbox_save_dir, show=False)
+    # from PIL import Image
+    # from utils import plot_bbox
+    # rootFolder = "data_king/labeled/"
+    # pos_label_file = "data/pos_labels.csv"
+    # cat_label_file = "data/Lung Nodule Clinical Data_Min Kim - Added Variables 10-2-2020.xlsx"
+    # cube_size = 64
+    # lungData = LungDataset(rootFolder, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
+    #                        cube_size=cube_size, train=None, screen=False, clinical=False)
+    # saveDir = "isotropic_central_slices"
+    # os.makedirs(saveDir, exist_ok=True)
+    # for i in tqdm(range(62, len(lungData.imageInfo))):
+    #     info = lungData.imageInfo[i]
+    #     save_name = "{:s}_{:s}_{:s}".format(info["pstr"], info["patientID"], info["date"])
+    #     save_name += "_PET" if info["PET"] == "Y" else ""
+    #     img = lungData.load_image(i)
+    #     pos = lungData.load_pos(i)
+    #     for idx, p in enumerate(pos):
+    #         z = int(p[2])
+    #         c_img = img[z]
+    #         save_dir = os.path.join(saveDir, save_name + "_no{:d}_z{:d}.png".format(idx, z))
+    #         PILimg = Image.fromarray(c_img)
+    #         PILimg.save(save_dir)
+    #         bbox_save_dir = save_dir.replace(".png", "_bbox.png")
+    #         plot_bbox(img, p, bbox_save_dir, show=False)
 
 ## --------------- step by step --------------- ##
 
