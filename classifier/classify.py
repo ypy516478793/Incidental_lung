@@ -411,8 +411,8 @@ def train(trainLoader, testLoader, trainValLoader, model, optimizer, scheduler, 
 
         print("=" * 50)
 
-        epoch_loss = running_loss / len(trainLoader.dataset)
-        epoch_acc = running_corrects.double() / len(trainLoader.dataset)
+        epoch_loss = running_loss / len(trainValLoader.dataset)
+        epoch_acc = running_corrects.double() / len(trainValLoader.dataset)
 
         all_preds = np.concatenate(all_preds).reshape(-1)
         all_labels = np.concatenate(all_labels).reshape(-1)

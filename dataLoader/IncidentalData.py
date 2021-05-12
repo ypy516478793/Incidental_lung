@@ -211,7 +211,7 @@ class LungDataset(object):
     #     print("Shape of test_y is: ", y_test.shape)
 
     def load_data(self, reload=False):
-        data_path = os.path.join(self.data_dir, "3D_incidental_lung.npz")
+        data_path = os.path.join(self.data_dir, "3D_incidental_lung_multiNeg.npz")
         if os.path.exists(data_path) and not reload:
             self.data = np.load(data_path, allow_pickle=True)
             self.X, self.y = self.data["x"], self.data["y"]
@@ -232,10 +232,10 @@ class LungDataset(object):
             # slices = self.get_slices(i, self.image_size)
             # label = self.load_cat(i)
             # labels = np.eye(self.num_classes, dtype=np.int)[np.repeat(label, len(slices))]
-            X.append(*cubes)
-            y.append(*labels)
-        self.X = np.expand_dims(X, axis=1)
-        self.y = np.array(y)
+            X.append(cubes)
+            y.append(labels)
+        self.X = np.expand_dims(np.concatenate(X), axis=1)
+        self.y = np.concatenate(y)
 
         np.savez_compressed(data_path, x=self.X, y=self.y)
         print("Save slice 3D incidental lung nodule data to {:s}".format(data_path))
@@ -313,8 +313,8 @@ class LungDataset(object):
         for imageId in range(num_images):
             pos = self.load_pos(imageId)
             cat = self.load_cat(imageId)
-            if len(pos) > 1:
-            # if len(pos) > 1 and cat == 0:
+            # if len(pos) > 1:
+            if len(pos) > 1 and cat == 0:
                 mask[imageId] = False
         self.imageInfo = self.imageInfo[mask]
 
