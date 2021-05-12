@@ -68,10 +68,22 @@ class IncidentalConfig(object):
     AUG_SCALE = True
     R_RAND_CROP = 0.3
     PAD_VALUE = 0   # previous 170
-    AUGTYPE = {"flip": False, "swap": False, "scale": False, "rotate": False, "contrast": False, "bright": False, "sharp": False, "splice": False}
+    # AUGTYPE = {"flip": False, "swap": False, "scale": False, "rotate": False, "contrast": False, "bright": False, "sharp": False, "splice": False}
     # AUGTYPE = {"flip": True, "swap": True, "scale": True, "rotate": True}
+
     KFOLD = None
     KFOLD_SEED = None
+
+    FLIP = False
+    SWAP = False
+    SCALE = False
+    ROTATE = False
+    CONSTRAST = False
+    BRIGHT = False
+    SHARP = False
+    SPLICE = False
+
+
 
     CONF_TH = 4
     NMS_TH = 0.3
@@ -144,7 +156,7 @@ class LungDataset(object):
         self.__screen__()
         self.load_data()
 
-    def get_datasets(self, kfold, splitId):
+    def get_datasets(self, kfold=None, splitId=None):
         datasets = self.load_subset(random_state=self.config.SPLIT_SEED, kfold=kfold, splitId=splitId)
         datasets_dict = {}
         for subset in ["train", "val", "test", "train_val"]:
@@ -431,6 +443,12 @@ class LungDataset(object):
 if __name__ == '__main__':
     config = IncidentalConfig()
     lungData = LungDataset(config)
+    datasets = lungData.get_datasets()
+    from torch.utils.data import DataLoader
+    trainLoader = DataLoader(datasets["train"], batch_size=4, shuffle=True)
+    for sample_batch in trainLoader:
+        # inputs, labels = sample_batch["cubes"], sample_batch["label"]
+        inputs, labels = sample_batch
 
     # writer = SummaryWriter(os.path.join("Visualize", "MethodistFull"))
     # config = IncidentalConfig()

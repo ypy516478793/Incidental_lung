@@ -9,6 +9,7 @@ from dataLoader.LUNA16Data import LUNA16
 from tqdm import tqdm
 
 from utils.summary_utils import Logger
+from utils.data_utils import augment
 from datetime import datetime
 from classifier.resnet import generate_model
 
@@ -36,15 +37,16 @@ parser.add_argument("-m", "--model", default="res18", help="model")
 parser.add_argument("-lm", "--load_model", type=str, default=None, help="Path/Directory of the model to be loaded")
 parser.add_argument("-j", "--workers", default=0, type=int, help="number of data loading workers (default: 32)")
 parser.add_argument("-t", "--train", type=eval, default=True, help="Train phase: True or False")
+parser.add_argument("-re", "--resume", type=eval, default=False, help="Resume training")
 # parser.add_argument("-cl", "--clinical", type=eval, default=False, help="Whether to use clinical features")
 
 parser.add_argument("-e", "--epochs", default=10, type=int, help="number of total epochs to run")
-parser.add_argument("-se", "--start-epoch", default=0, type=int, help="manual epoch number (useful on restarts)")
+parser.add_argument("-se", "--start_epoch", default=0, type=int, help="manual epoch number (useful on restarts)")
 parser.add_argument("-sl", "--best_loss", default=np.inf, type=float, help="manual best loss (useful on restarts)")
-parser.add_argument("-b", "--batch-size", default=4, type=int, help="mini-batch size (default: 16)")
-parser.add_argument("-lr", "--learning-rate", default=0.001, type=float, help="initial learning rate")
+parser.add_argument("-b", "--batch_size", default=4, type=int, help="mini-batch size (default: 16)")
+parser.add_argument("-lr", "--learning_rate", default=0.001, type=float, help="initial learning rate")
 parser.add_argument("-mo", "--momentum", default=0.9, type=float, help="momentum")
-parser.add_argument("-wd", "--weight-decay", default=1e-3, type=float, help="weight decay (default: 1e-4)")
+parser.add_argument("-wd", "--weight_decay", default=1e-3, type=float, help="weight decay (default: 1e-4)")
 
 parser.add_argument("-es", "--extra_str", type=str, default="", help='extra string for data')
 
@@ -161,14 +163,14 @@ import torch
 
 
 
-def train(trainLoader, testLoader, trainValLoader, model, optimizer, scheduler, criterion, save_dir,
+def train(trainLoader, testLoader, trainValLoader, augmentor, model, optimizer, scheduler, criterion, save_dir,
           epochs=30, start_epoch=0):
 
     model_copy = copy.deepcopy(model)
 
     plot_folder = os.path.join(save_dir, "plots")
     os.makedirs(plot_folder, exist_ok=True)
-    
+
     num_classes = 2
     best_val_loss = np.inf
     best_acc = 0
@@ -199,7 +201,8 @@ def train(trainLoader, testLoader, trainValLoader, model, optimizer, scheduler, 
         for sample_batch in trainLoader:
             # inputs, labels = sample_batch["cubes"], sample_batch["label"]
             inputs, labels = sample_batch
-            if isinstance(inputs, list):
+            inputs = augmentor(inputs)
+            if isinstance(inputs, list) or isinstance(inputs, np.ndarray):
                 inputs = torch.from_numpy(np.array(inputs).astype(np.float32)).to(device)
                 labels = torch.from_numpy(np.array(labels).astype(np.int)).to(device)
             else:
@@ -242,10 +245,10 @@ def train(trainLoader, testLoader, trainValLoader, model, optimizer, scheduler, 
             optimizer.step()
 
         print("=" * 50)
-        
+
         epoch_loss = running_loss / len(trainLoader.dataset)
         epoch_acc = running_corrects.double() / len(trainLoader.dataset)
-        
+
 
         all_preds = np.concatenate(all_preds).reshape(-1)
         all_labels = np.concatenate(all_labels).reshape(-1)
@@ -280,7 +283,7 @@ def train(trainLoader, testLoader, trainValLoader, model, optimizer, scheduler, 
             for sample_batch in testLoader:
                 # inputs, labels = sample_batch["cubes"], sample_batch["label"]
                 inputs, labels = sample_batch
-                if isinstance(inputs, list):
+                if isinstance(inputs, list) or isinstance(inputs, np.ndarray):
                     # inputs = [x.float().to(device) for x in inputs]
                     inputs = torch.from_numpy(np.array(inputs).astype(np.float32)).to(device)
                     labels = torch.from_numpy(np.array(labels).astype(np.int)).to(device)
@@ -303,7 +306,7 @@ def train(trainLoader, testLoader, trainValLoader, model, optimizer, scheduler, 
                 all_labels.append(labels.numpy())
 
             score = np.mean(scores)
-            acc = correct / total * 100
+            acc = correct / total
             scheduler.step(score)
 
             all_preds = np.concatenate(all_preds).reshape(-1)
@@ -345,98 +348,102 @@ def train(trainLoader, testLoader, trainValLoader, model, optimizer, scheduler, 
         # if epoch % 5 == 0:
         #     torch.save(model.state_dict(), os.path.join(save_dir, 'epoch_' + str(epoch) + '.pt'))
 
-    # Retrain on train_val dataset
-    train_full_loss = []
-    train_full_acc = []
-    for epoch in tqdm(range(start_epoch, best_epoch)):
-        print('Epoch {}/{}'.format(epoch + 1, best_epoch))
-        print('-' * 10)
+    if trainValLoader is not None:
+        # Retrain on train_val dataset
+        train_full_loss = []
+        train_full_acc = []
+        for epoch in tqdm(range(start_epoch, best_epoch)):
+            print('Epoch {}/{}'.format(epoch + 1, best_epoch))
+            print('-' * 10)
 
-        # Training phase
-        model_copy.train()
-        all_preds = []
-        all_probs = []
-        all_labels = []
+            # Training phase
+            model_copy.train()
+            all_preds = []
+            all_probs = []
+            all_labels = []
 
-        running_loss = 0.0
-        running_corrects = 0
-        itr = 0
-        s_time = time.time()
+            running_loss = 0.0
+            running_corrects = 0
+            itr = 0
+            s_time = time.time()
 
-        for sample_batch in trainValLoader:
-            # inputs, labels = sample_batch["cubes"], sample_batch["label"]
-            inputs, labels = sample_batch
-            if isinstance(inputs, list):
-                inputs = torch.from_numpy(np.array(inputs).astype(np.float32)).to(device)
-                labels = torch.from_numpy(np.array(labels).astype(np.int)).to(device)
-            else:
-                inputs = inputs.float().to(device)
-                labels = labels.to(device)
+            for sample_batch in trainValLoader:
+                # inputs, labels = sample_batch["cubes"], sample_batch["label"]
+                inputs, labels = sample_batch
+                inputs = augmentor(inputs)
+                if isinstance(inputs, list) or isinstance(inputs, np.ndarray):
+                    inputs = torch.from_numpy(np.array(inputs).astype(np.float32)).to(device)
+                    labels = torch.from_numpy(np.array(labels).astype(np.int)).to(device)
+                else:
+                    inputs = inputs.float().to(device)
+                    labels = labels.to(device)
 
-            # cube_size = inputs.shape[2]
-            # img_grid = torchvision.utils.make_grid(inputs[:, :, cube_size // 2])
-            # writer.add_image("train_images", img_grid)
-            # writer.add_graph(model, inputs)
+                # cube_size = inputs.shape[2]
+                # img_grid = torchvision.utils.make_grid(inputs[:, :, cube_size // 2])
+                # writer.add_image("train_images", img_grid)
+                # writer.add_graph(model, inputs)
 
-            # zero the parameter gradients
-            optimizer.zero_grad()
-            # forward pass
-            outputs = model_copy(inputs)
-            loss = criterion(outputs, labels)
-            _, preds = torch.max(outputs, 1)
-            probs = nn.functional.softmax(outputs, 1)[:, 1]
-            all_probs.append(probs.detach().cpu().numpy())
-            all_preds.append(preds.cpu().numpy())
-            all_labels.append(labels.cpu().numpy())
+                # zero the parameter gradients
+                optimizer.zero_grad()
+                # forward pass
+                outputs = model_copy(inputs)
+                loss = criterion(outputs, labels)
+                _, preds = torch.max(outputs, 1)
+                probs = nn.functional.softmax(outputs, 1)[:, 1]
+                all_probs.append(probs.detach().cpu().numpy())
+                all_preds.append(preds.cpu().numpy())
+                all_labels.append(labels.cpu().numpy())
 
-            # print batch result
-            lr = [group['lr'] for group in optimizer.param_groups]
-            if itr % print_per_iteration == 0:
-                e_time = time.time()
-                t = e_time - s_time
-                acc = torch.sum(preds == labels.data).double() / len(preds)
-                print("TrainVal: {:}: EPOCH{:03d} {:}Itr{:}/{:} ({:.2f}s/itr) Train: acc {:3.2f}, loss {:2.4f}, lr {:s}".format(
-                    datetime.now(), epoch, int(print_per_iteration), itr // print_per_iteration,
-                                                                     len(trainLoader) // print_per_iteration, t,
-                    acc.item(), loss.item(), str(lr)))
+                # print batch result
+                lr = [group['lr'] for group in optimizer.param_groups]
+                if itr % print_per_iteration == 0:
+                    e_time = time.time()
+                    t = e_time - s_time
+                    acc = torch.sum(preds == labels.data).double() / len(preds)
+                    print("TrainVal: {:}: EPOCH{:03d} {:}Itr{:}/{:} ({:.2f}s/itr) Train: acc {:3.2f}, loss {:2.4f}, lr {:s}".format(
+                        datetime.now(), epoch, int(print_per_iteration), itr // print_per_iteration,
+                                                                         len(trainLoader) // print_per_iteration, t,
+                        acc.item(), loss.item(), str(lr)))
 
-            # statistics
-            running_loss += loss.item() * inputs.size(0)
-            running_corrects += torch.sum(preds == labels.data)
-            itr += 1
+                # statistics
+                running_loss += loss.item() * inputs.size(0)
+                running_corrects += torch.sum(preds == labels.data)
+                itr += 1
 
-            # backward + optimize only if in training phase
-            loss.backward()
-            optimizer.step()
+                # backward + optimize only if in training phase
+                loss.backward()
+                optimizer.step()
 
-        print("=" * 50)
+            print("=" * 50)
 
-        epoch_loss = running_loss / len(trainValLoader.dataset)
-        epoch_acc = running_corrects.double() / len(trainValLoader.dataset)
+            epoch_loss = running_loss / len(trainValLoader.dataset)
+            epoch_acc = running_corrects.double() / len(trainValLoader.dataset)
 
-        all_preds = np.concatenate(all_preds).reshape(-1)
-        all_labels = np.concatenate(all_labels).reshape(-1)
-        confMat = confusion_matrix(all_labels, all_preds, np.arange(num_classes))
-        df_cm = pd.DataFrame(confMat, index=[i for i in range(num_classes)],
-                             columns=[i for i in range(num_classes)])
-        print("Train confusion matrix: ")
-        print(df_cm)
-        fig = plt.figure()
-        sns.heatmap(df_cm, annot=True, cmap="YlGnBu")
-        plt.savefig(os.path.join(plot_folder, "train_full_confusion_matrix_ep{:d}.png".format(epoch)), bbox_inches="tight",
-                    dpi=200)
-        plt.close(fig)
+            all_preds = np.concatenate(all_preds).reshape(-1)
+            all_labels = np.concatenate(all_labels).reshape(-1)
+            confMat = confusion_matrix(all_labels, all_preds, np.arange(num_classes))
+            df_cm = pd.DataFrame(confMat, index=[i for i in range(num_classes)],
+                                 columns=[i for i in range(num_classes)])
+            print("Train confusion matrix: ")
+            print(df_cm)
+            fig = plt.figure()
+            sns.heatmap(df_cm, annot=True, cmap="YlGnBu")
+            plt.savefig(os.path.join(plot_folder, "train_full_confusion_matrix_ep{:d}.png".format(epoch)), bbox_inches="tight",
+                        dpi=200)
+            plt.close(fig)
 
-        writer.add_scalar('Loss/train_full', epoch_loss, epoch)
-        writer.add_scalar('Accuracy/train_full', epoch_acc, epoch)
+            writer.add_scalar('Loss/train_full', epoch_loss, epoch)
+            writer.add_scalar('Accuracy/train_full', epoch_acc, epoch)
 
-        train_full_loss.append(epoch_loss)
-        train_full_acc.append(epoch_acc)
+            train_full_loss.append(epoch_loss)
+            train_full_acc.append(epoch_acc)
 
-        print("epoch {:d} | avg training loss {:.6f} | avg training acc {:.2f}".format(
-            epoch, epoch_loss, epoch_acc))
+            print("epoch {:d} | avg training loss {:.6f} | avg training acc {:.2f}".format(
+                epoch, epoch_loss, epoch_acc))
 
-    torch.save(model_copy.state_dict(), os.path.join(save_dir, 'full_epoch_' + str(best_epoch) + '.pt'))
+        torch.save(model_copy.state_dict(), os.path.join(save_dir, 'full_epoch_' + str(best_epoch) + '.pt'))
+    else:
+        model_copy = model
 
     if testLoader:
         # start_from_step = 200
@@ -488,7 +495,7 @@ def test(testLoader, model, criterion, save_folder, start_epoch):
     for sample_batch in tqdm(testLoader):
         # inputs, labels = sample_batch["cubes"], sample_batch["label"]
         inputs, labels = sample_batch
-        if isinstance(inputs, list):
+        if isinstance(inputs, list) or isinstance(inputs, np.ndarray):
             # inputs = [x.float().to(device) for x in inputs]
             inputs = torch.from_numpy(np.array(inputs).astype(np.float32)).to(device)
             labels = torch.from_numpy(np.array(labels).astype(np.int)).to(device)
@@ -510,7 +517,7 @@ def test(testLoader, model, criterion, save_folder, start_epoch):
         all_labels.append(labels.numpy())
 
     score = np.mean(scores)
-    acc = correct / total * 100
+    acc = correct / total
 
     all_preds = np.concatenate(all_preds).reshape(-1)
     all_labels = np.concatenate(all_labels).reshape(-1)
@@ -685,7 +692,10 @@ def main():
 
         # trainLoader = DataLoader(datasets["train"], batch_size=batch_size, shuffle=True, collate_fn=collate)
         trainLoader = DataLoader(datasets["train"], batch_size=batch_size, shuffle=True)
-        trainValLoader = DataLoader(datasets["train_val"], batch_size=batch_size, shuffle=True)
+        if kfold is not None:
+            trainValLoader = DataLoader(datasets["train_val"], batch_size=batch_size, shuffle=True)
+        else:
+            trainValLoader = None
         valLoader = DataLoader(datasets["val"], batch_size=batch_size, shuffle=False)
         testLoader = DataLoader(datasets["test"], batch_size=batch_size, shuffle=False)
 
@@ -711,22 +721,39 @@ def main():
         # valLoader = DataLoader(valData, batch_size=1, shuffle=False)
     else:
         assert datasource == "luna"
-        from dataLoader.LUNA16Data import LUNA16, LunaConfig
+        # from dataLoader.LUNA16Data import LUNA16, LunaConfig
+        from dataLoader.LunaData import LunaDataset, LunaConfig
+
         config = LunaConfig()
+        lunaData = LunaDataset(config)
+        datasets = lunaData.get_datasets(kfold=kfold, splitId=splitId)
+        # kfold = len(lungData.y) if kfold is None else args.kfold
+        # kfold = KFold(n_splits=kfold, random_state=42)
+
+        # trainLoader = DataLoader(datasets["train"], batch_size=batch_size, shuffle=True, collate_fn=collate)
+        trainLoader = DataLoader(datasets["train"], batch_size=batch_size, shuffle=True)
+        if kfold is not None:
+            trainValLoader = DataLoader(datasets["train_val"], batch_size=batch_size, shuffle=True)
+        else:
+            trainValLoader = None
+        valLoader = DataLoader(datasets["val"], batch_size=batch_size, shuffle=False)
+        testLoader = DataLoader(datasets["test"], batch_size=batch_size, shuffle=False)
         # root_dir = "../data/"
         # pos_label_file = "../data/pos_labels.csv"
         # cat_label_file = "../data/Lung Nodule Clinical Data_Min Kim (No name).xlsx"
         # load_model = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/classifier/model/classification_LUNA16/Resnet18_Adam_lr0.001"
         # cube_size = 48
-        trainData = LUNA16(train=True)
-        trainLoader = DataLoader(trainData, batch_size=2, shuffle=True)
-        valData = LUNA16(train=False)
-        valLoader = DataLoader(valData, batch_size=1, shuffle=False)
+        # trainData = LUNA16(train=True)
+        # trainLoader = DataLoader(trainData, batch_size=2, shuffle=True)
+        # valData = LUNA16(train=False)
+        # valLoader = DataLoader(valData, batch_size=1, shuffle=False)
 
     print("Shape of train_x is: ", (len(datasets["train"]), 1,) + (config.CUBE_SIZE,) * 3)
     print("Shape of train_y is: ", (len(datasets["train"]),))
     print("Shape of val_x is: ", (len(datasets["val"]), 1,) + (config.CUBE_SIZE,) * 3)
     print("Shape of val_y is: ", (len(datasets["val"]),))
+
+    augmentor = augment(ifflip=config.FLIP, ifrotate=config.ROTATE, ifswap=config.SWAP)
     config.display()
 
     ## ----- Construct models ----- ##
@@ -753,28 +780,38 @@ def main():
     # save_dir += "{:s}_{:s}".format(model_name, extra_str)
 
 
-
     if load_model:
-        model_list = [m for m in os.listdir(load_model) if m.endswith("pt")]
-        from natsort import natsorted
-        latest_model = natsorted(model_list)[-1]
-        start_epoch = int(latest_model.strip(".pt")[6:])
-        model_path = os.path.join(load_model, latest_model)
-        state_dict = torch.load(model_path)
+        if os.path.isfile(load_model):
+            load_path = load_model
+            start_epoch = int(os.path.basename(load_path)[:].strip(".pt")[6:])
+        else:
+            assert os.path.isdir(load_model), "Load_model {:} is either file or path".format(load_model)
+            from natsort import natsorted
+            model_list = [m for m in os.listdir(load_model) if m.endswith("pt")]
+            model_list = natsorted(model_list)
+            assert len(model_list) > 0, "No model listed in {:s}".format(load_model)
+            load_path = os.path.join(load_model, model_list[-1])
+            start_epoch = int(model_list[-1].strip(".pt")[6:])
+        state_dict = torch.load(load_path)
         try:
             model.load_state_dict(state_dict)
         except RuntimeError:
             from collections import OrderedDict
             new_state_dict = OrderedDict()
             for k, v in state_dict.items():
-                name = "module." + k  # add "module." for dataparallel
+                if "module." in k:
+                    name = k.replace("module.", "")
+                else:
+                    name = "module." + k  # add "module." for dataparallel
                 new_state_dict[name] = v
             model.load_state_dict(new_state_dict)
 
-        print("Load successfully from " + model_path)
+        print("Load successfully from " + load_path)
     else:
         start_epoch = 0
-        
+    if not args.resume:
+        start_epoch = 0
+
     # Print the model we just instantiated
     print(model)
 
@@ -789,17 +826,17 @@ def main():
         model = nn.DataParallel(model)
         print("Using {:} GPUs".format(torch.cuda.device_count()))
     model = model.to(device)
-    
+
     ## ----- Set criterion, optimizer ----- ##
     # criterion = nn.L1Loss()
     # criterion = nn.MSELoss()
     # criterion = RMSLELoss()
     criterion = nn.CrossEntropyLoss()
 
-    optimizer = optim.SGD(model.parameters(), lr=0.0001, momentum=0.9, weight_decay=0.01)
+    # optimizer = optim.SGD(model.parameters(), lr=args.learning_rate, momentum=args.momentum, weight_decay=args.weight_decay)
     # optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=0.1)
-    # optimizer = optim.Adam(model.parameters(), lr=0.001)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, cooldown=10, min_lr=0.0001, patience=100)
+    optimizer = optim.Adam(model.parameters(), lr=lr)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, cooldown=10, min_lr=0.00001, patience=10)
 
     # scaler = RobustScaler()
     # train_x = scaler.fit_transform(train_x)
@@ -834,7 +871,7 @@ def main():
     
     ## ----- Training or test ----- ##
     if train_flag:
-        model, start_epoch = train(trainLoader, valLoader, trainValLoader, model, optimizer, scheduler, criterion, save_dir, epochs, start_epoch)
+        model, start_epoch = train(trainLoader, valLoader, trainValLoader, augmentor, model, optimizer, scheduler, criterion, save_dir, epochs, start_epoch)
         test(testLoader, model, criterion, save_dir, start_epoch)
     else:
         test(testLoader, model, criterion, save_dir, start_epoch)

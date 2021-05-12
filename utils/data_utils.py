@@ -22,51 +22,58 @@ def balance_any_data(X, y):
     return X, y
 
 
-def augment(sample, ifflip=False, ifrotate=False, ifswap=False, ifcontrast=False, ifbright=False, ifsharp=False):
-    #                     angle1 = np.random.rand()*180
-    if ifrotate:
-        angle1 = np.random.rand() * 180
-        sample = rotate(sample, angle1, axes=(2, 3), reshape=False)
+class augment(object):
+    def __init__(self, ifflip=False, ifrotate=False, ifswap=False, ifcontrast=False, ifbright=False, ifsharp=False):
+        self.ifflip = ifflip
+        self.ifrotate = ifrotate
+        self.ifswap = ifswap
+        self.ifcontrast = ifcontrast
+        self.ifbright = ifbright
+        self.ifsharp = ifsharp
 
-    if ifcontrast:
-        factor = np.random.rand() * 2
-        new_sample = []
-        for i in range(sample.shape[1]):
-            image_pil = Image.fromarray(sample[0, i])
-            enhancer = ImageEnhance.Contrast(image_pil)
-            image_enhanced = enhancer.enhance(factor)
-            new_sample.append(np.array(image_enhanced))
-        sample = np.expand_dims(new_sample, 0)
+    def __call__(self, sample):
+        if self.ifrotate:
+            angle1 = np.random.rand() * 180
+            sample = rotate(sample, angle1, axes=(2, 3), reshape=False)
 
-    if ifbright:
-        factor = np.random.rand() * 2
-        new_sample = []
-        for i in range(sample.shape[1]):
-            image_pil = Image.fromarray(sample[0, i])
-            enhancer = ImageEnhance.Brightness(image_pil)
-            image_enhanced = enhancer.enhance(factor)
-            new_sample.append(np.array(image_enhanced))
-        sample = np.expand_dims(new_sample, 0)
+        if self.ifcontrast:
+            factor = np.random.rand() * 2
+            new_sample = []
+            for i in range(sample.shape[1]):
+                image_pil = Image.fromarray(sample[0, i])
+                enhancer = ImageEnhance.Contrast(image_pil)
+                image_enhanced = enhancer.enhance(factor)
+                new_sample.append(np.array(image_enhanced))
+            sample = np.expand_dims(new_sample, 0)
 
-    if ifsharp:
-        factor = np.random.rand() * 2
-        new_sample = []
-        for i in range(sample.shape[1]):
-            image_pil = Image.fromarray(sample[0, i])
-            enhancer = ImageEnhance.Sharpness(image_pil)
-            image_enhanced = enhancer.enhance(factor)
-            new_sample.append(np.array(image_enhanced))
-        sample = np.expand_dims(new_sample, 0)
+        if self.ifbright:
+            factor = np.random.rand() * 2
+            new_sample = []
+            for i in range(sample.shape[1]):
+                image_pil = Image.fromarray(sample[0, i])
+                enhancer = ImageEnhance.Brightness(image_pil)
+                image_enhanced = enhancer.enhance(factor)
+                new_sample.append(np.array(image_enhanced))
+            sample = np.expand_dims(new_sample, 0)
 
-    if ifswap:
-        if sample.shape[1] == sample.shape[2] and sample.shape[1] == sample.shape[3]:
-            axisorder = np.random.permutation(3)
-            sample = np.transpose(sample, np.concatenate([[0], axisorder + 1]))
+        if self.ifsharp:
+            factor = np.random.rand() * 2
+            new_sample = []
+            for i in range(sample.shape[1]):
+                image_pil = Image.fromarray(sample[0, i])
+                enhancer = ImageEnhance.Sharpness(image_pil)
+                image_enhanced = enhancer.enhance(factor)
+                new_sample.append(np.array(image_enhanced))
+            sample = np.expand_dims(new_sample, 0)
 
+        if self.ifswap:
+            if sample.shape[1] == sample.shape[2] and sample.shape[1] == sample.shape[3]:
+                axisorder = np.random.permutation(3)
+                sample = np.transpose(sample, np.concatenate([[0], axisorder + 1]))
 
-    if ifflip:
-        #         flipid = np.array([np.random.randint(2),np.random.randint(2),np.random.randint(2)])*2-1
-        flipid = np.array([1, np.random.randint(2), np.random.randint(2)]) * 2 - 1
-        sample = np.ascontiguousarray(sample[:, ::flipid[0], ::flipid[1], ::flipid[2]])
+        if self.ifflip:
+            #         flipid = np.array([np.random.randint(2),np.random.randint(2),np.random.randint(2)])*2-1
+            flipid = np.array([1, np.random.randint(2), np.random.randint(2)]) * 2 - 1
+            sample = np.ascontiguousarray(sample[:, ::flipid[0], ::flipid[1], ::flipid[2]])
 
-    return sample
+        return sample

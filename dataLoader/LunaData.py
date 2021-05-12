@@ -49,6 +49,19 @@ class LunaConfig(object):
     DATA_DIR = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/LUNA16/cubes_64"
     CUBE_SIZE = 64
     SPLIT_SEED = None
+
+
+    FLIP = False
+    SWAP = False
+    SCALE = False
+    ROTATE = False
+    CONSTRAST = False
+    BRIGHT = False
+    SHARP = False
+    SPLICE = False
+
+    LOAD_CLINICAL = False
+
     # ANCHORS = [10.0, 30.0, 60.0]
     # MAX_NODULE_SIZE = 60
     # # ANCHORS = [5., 10., 20.]  # [ 10.0, 30.0, 60.]
