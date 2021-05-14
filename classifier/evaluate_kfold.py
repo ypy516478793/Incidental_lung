@@ -18,17 +18,22 @@ import os
 
 
 
-def test(model_dir, kfold=5):
+def test(model_dir, model_name, kfold=5):
 
     labels_test = []
     probs_test = []
-    for i in range(kfold):
-        split_dir = "{:s}/res18.kfold{:d}".format(model_dir, i)
-        temp = np.load(os.path.join(split_dir, "preds.npz"))
+    if kfold is None or kfold == 1:
+        temp = np.load(os.path.join(model_dir, "preds.npz"), allow_pickle=True)
         l, p = temp["l"], temp["p"].squeeze()
-        # p = np.array([p])
         labels_test.append(l)
         probs_test.append(p)
+    else:
+        for i in range(kfold):
+            split_dir = "{:s}/{:s}.kfold{:d}".format(model_dir, model_name, i)
+            temp = np.load(os.path.join(split_dir, "preds.npz"), allow_pickle=True)
+            l, p = temp["l"], temp["p"].squeeze()
+            labels_test.append(l)
+            probs_test.append(p)
     labels_test = np.concatenate(labels_test)
     probs_test = np.concatenate(probs_test)
     # np.savez_compressed(os.path.join(model_dir, "preds.npz"),
@@ -136,13 +141,14 @@ def test(model_dir, kfold=5):
 
 def main():
 
-    test(args.save_dir, args.kfold)
+    test(args.save_dir, args.model, args.kfold)
 
 def get_args():
     parser = argparse.ArgumentParser()
     # parser.add_argument('--datasource', type=str, help='SEAMII, BP2004', default="SEAMII")
     parser.add_argument('--save_dir', type=str, help="directory of saved results", default="AACR_results/bs_16.lr_0.001.beta_0.001.aug.balanceAfterSplit")
     parser.add_argument('--kfold', type=int, help='number of kfold', default=5)
+    parser.add_argument("-m", "--model", default="res18", help="model")
     # parser.add_argument('--epochs', type=int, help='number of epochs', default=50)
     # parser.add_argument('--batchsize', type=int, help='batch size', default=16)
     # parser.add_argument('--lr', type=float, help='learning rate', default=0.001)

@@ -48,7 +48,7 @@ class LunaConfig(object):
 
     DATA_DIR = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/LUNA16/cubes_64"
     CUBE_SIZE = 64
-    SPLIT_SEED = None
+    SPLIT_SEED = 42
 
 
     FLIP = False
@@ -141,7 +141,7 @@ class LunaDataset(object):
 
         self.load_data()
 
-    def get_datasets(self, kfold, splitId):
+    def get_datasets(self, kfold=None, splitId=None):
         datasets = self.load_subset(random_state=self.config.SPLIT_SEED, kfold=kfold, splitId=splitId)
         datasets_dict = {}
         for subset in ["train", "val", "test", "train_val"]:
@@ -162,10 +162,8 @@ class LunaDataset(object):
     #     self.negCases = trainNegCases if train else valNegCases
 
 
-    def load_subset(self, random_state=None, kfold=None, splitId=None):
+    def load_subset(self, random_state=42, kfold=None, splitId=None):
         datasets = {}
-        if random_state is None:
-            random_state = 42
         if kfold is None:
             X_train, X_test, y_train, y_test = train_test_split(self.X, self.y, test_size=0.2, random_state=random_state)
             X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2, random_state=random_state)
@@ -307,9 +305,15 @@ class LunaDataset(object):
 
 
 if __name__ == '__main__':
-
-    writer = SummaryWriter(os.path.join("Visualize", "MethodistFull"))
-    config = IncidentalConfig()
+    config = LunaConfig()
+    lunaData = LunaDataset(config)
+    datasets = lunaData.get_datasets()
+    # trainLoader = DataLoader(datasets["train"], batch_size=batch_size, shuffle=True, collate_fn=collate)
+    from torch.utils.data import DataLoader
+    trainLoader = DataLoader(datasets["train"], batch_size=4, shuffle=True, num_workers=0)
+    for itr, sample_batch in enumerate(trainLoader):
+        # Load inputs and labels
+        inputs, labels = sample_batch
 
     # # rootFolder = "/Users/yuan_pengyu/Downloads/IncidentalLungCTs_sample/"
     # # rootFolder = "data/"

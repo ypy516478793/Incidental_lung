@@ -93,7 +93,7 @@ class IncidentalConfig(object):
     MARGIN = 32
 
     ORIGIN_SCALE = False
-    SPLIT_SEED = None
+    SPLIT_SEED = 42
     LIMIT_TRAIN = None
     SPLIT_ID = None
 
@@ -170,10 +170,8 @@ class LungDataset(object):
         return datasets_dict
 
 
-    def load_subset(self, random_state=None, kfold=None, splitId=None):
+    def load_subset(self, random_state=42, kfold=None, splitId=None):
         datasets = {}
-        if random_state is None:
-            random_state = 42
         if kfold is None:
             X_train, X_test, y_train, y_test = train_test_split(self.X, self.y, test_size=0.2, random_state=random_state)
             X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2, random_state=random_state)
