@@ -5,6 +5,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+import copy
+import numpy as np
+from sklearn import metrics
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split
 
 def get_inplanes():
     return [64, 128, 256, 512]
@@ -98,6 +103,35 @@ class Bottleneck(nn.Module):
 
         return out
 
+class DistillLayer(nn.Module):
+    def __init__(
+        self,
+        emb_func,
+        classifier,
+        is_distill,
+        emb_func_path=None,
+        classifier_path=None,
+    ):
+        super(DistillLayer, self).__init__()
+        self.emb_func = self._load_state_dict(emb_func, emb_func_path, is_distill)
+        self.classifier = self._load_state_dict(classifier, classifier_path, is_distill)
+
+    def _load_state_dict(self, model, state_dict_path, is_distill):
+        new_model = None
+        if is_distill and state_dict_path is not None:
+            new_model = copy.deepcopy(model)
+            model_state_dict = torch.load(state_dict_path, map_location="cpu")
+            new_model.load_state_dict(model_state_dict)
+        return new_model
+
+    @torch.no_grad()
+    def forward(self, x):
+        output = None
+        if self.emb_func is not None and self.classifier is not None:
+            output = self.emb_func(x)
+            output = self.classifier(output)
+        return output
+
 
 class ResNet(nn.Module):
 
@@ -112,7 +146,7 @@ class ResNet(nn.Module):
                  shortcut_type='B',
                  widen_factor=1.0,
                  n_classes=400,
-                 clinical=False):
+                 clinical=False,):
         super().__init__()
 
         block_inplanes = [int(x * widen_factor) for x in block_inplanes]
@@ -149,16 +183,7 @@ class ResNet(nn.Module):
 
         self.avgpool = nn.AdaptiveAvgPool3d((1, 1, 1))
         self.clinical = clinical
-        if clinical:
-            self.fc_clinical = nn.Sequential(
-                nn.Linear(37, 256),
-                nn.ReLU(),
-                nn.Linear(256, 256),
-                nn.ReLU(),
-            )
-            self.fc = nn.Linear(block_inplanes[3] * block.expansion + 256, n_classes)
-        else:
-            self.fc = nn.Linear(block_inplanes[3] * block.expansion, n_classes)
+
 
         for m in self.modules():
             if isinstance(m, nn.Conv3d):
@@ -221,14 +246,310 @@ class ResNet(nn.Module):
         x = self.avgpool(x)
 
         x = x.view(x.size(0), -1)
-        if self.clinical:
-            x_clinical = self.fc_clinical(x_clinical)
-            x = torch.cat([x, x_clinical], 1)
-            x = self.fc(x)
-        else:
-            x = self.fc(x)
+
 
         return x
+
+class DistillKLLoss(nn.Module):
+    def __init__(self, T):
+        super(DistillKLLoss, self).__init__()
+        self.T = T
+
+    def forward(self, y_s, y_t):
+        if y_t is None:
+            return 0.0
+
+        p_s = F.log_softmax(y_s / self.T, dim=1)
+        p_t = F.softmax(y_t / self.T, dim=1)
+        loss = F.kl_div(p_s, p_t, size_average=False) * (self.T ** 2) / y_s.size(0)
+        return loss
+
+def topk_(matrix, K, axis):
+    """
+    the function to calc topk acc of ndarrary.
+
+    TODO
+
+    """
+    if axis == 0:
+        row_index = np.arange(matrix.shape[1 - axis])
+        topk_index = np.argpartition(-matrix, K, axis=axis)[0:K, :]
+        topk_data = matrix[topk_index, row_index]
+        topk_index_sort = np.argsort(-topk_data, axis=axis)
+        topk_data_sort = topk_data[topk_index_sort, row_index]
+        topk_index_sort = topk_index[0:K, :][topk_index_sort, row_index]
+    else:
+        column_index = np.arange(matrix.shape[1 - axis])[:, None]
+        topk_index = np.argpartition(-matrix, K, axis=axis)[:, 0:K]
+        topk_data = matrix[column_index, topk_index]
+        topk_index_sort = np.argsort(-topk_data, axis=axis)
+        topk_data_sort = topk_data[column_index, topk_index_sort]
+        topk_index_sort = topk_index[:, 0:K][column_index, topk_index_sort]
+    return topk_data_sort, topk_index_sort
+
+def accuracy(output, target, topk=1):
+    """
+    Calc the acc of tpok.
+
+    output and target have the same dtype and the same shape.
+
+    Args:
+        output (torch.Tensor or np.ndarray): The output.
+        target (torch.Tensor or np.ndarray): The target.
+        topk (int or list or tuple): topk . Defaults to 1.
+
+    Returns:
+        float: acc.
+    """
+    with torch.no_grad():
+        batch_size = target.size(0)
+
+        _, pred = {
+            "Tensor": torch.topk,
+            "ndarray": lambda output, maxk, axis: (
+                None,
+                torch.from_numpy(topk_(output, maxk, axis)[1]).to(target.device),
+            ),
+        }[output.__class__.__name__](output, topk, 1)
+
+        pred = pred.t()
+        correct = pred.eq(target.view(1, -1).expand_as(pred))
+
+        correct_k = correct[:topk].view(-1).float().sum(0, keepdim=True)
+        res = correct_k.mul_(100.0 / batch_size).item()
+        return res
+
+from torch.nn import init
+
+def weights_init_normal(m):
+    classname = m.__class__.__name__
+    # print(classname)
+    if classname.find("Conv2d") != -1:
+        init.normal_(m.weight.data, 0.0, 0.02)
+    elif classname.find("Linear") != -1:
+        init.normal_(m.weight.data, 0.0, 0.02)
+    elif classname.find("BatchNorm2d") != -1:
+        init.normal_(m.weight.data, 1.0, 0.02)
+        init.constant_(m.bias.data, 0.0)
+
+
+def weights_init_xavier(m):
+    classname = m.__class__.__name__
+    # print(classname)
+    if classname.find("Conv2d") != -1:
+        init.xavier_normal_(m.weight.data, gain=0.02)
+    elif classname.find("Linear") != -1:
+        init.xavier_normal_(m.weight.data, gain=0.02)
+    elif classname.find("BatchNorm2d") != -1:
+        init.normal_(m.weight.data, 1.0, 0.02)
+        init.constant_(m.bias.data, 0.0)
+
+
+def weights_init_kaiming(m):
+    classname = m.__class__.__name__
+    # print(classname)
+    if classname.find("Conv2d") != -1:
+        init.kaiming_normal_(m.weight.data, a=0, mode="fan_in")
+    elif classname.find("Linear") != -1:
+        init.kaiming_normal_(m.weight.data, a=0, mode="fan_in")
+    elif classname.find("BatchNorm2d") != -1:
+        init.normal_(m.weight.data, 1.0, 0.02)
+        init.constant_(m.bias.data, 0.0)
+
+
+def weights_init_orthogonal(m):
+    classname = m.__class__.__name__
+    # print(classname)
+    if classname.find("Conv2d") != -1:
+        init.orthogonal_(m.weight.data, gain=1)
+    elif classname.find("Linear") != -1:
+        init.orthogonal_(m.weight.data, gain=1)
+    elif classname.find("BatchNorm2d") != -1:
+        init.normal_(m.weight.data, 1.0, 0.02)
+        init.constant_(m.bias.data, 0.0)
+
+def init_weights(net, init_type="kaiming"):
+    # print("initialization method [%s]" % init_type)
+    if init_type == "normal":
+        net.apply(weights_init_normal)
+    elif init_type == "xavier":
+        net.apply(weights_init_xavier)
+    elif init_type == "kaiming":
+        net.apply(weights_init_kaiming)
+    elif init_type == "orthogonal":
+        net.apply(weights_init_orthogonal)
+    else:
+        raise NotImplementedError
+
+class ResNet_MB(nn.Module):
+    def __init__(
+        self,
+        feat_dim,
+        num_class,
+        gamma=1,
+        alpha=0,
+        is_distill=False,
+        kd_T=4,
+        emb_func_path=None,
+        classifier_path=None,
+        clinical=False,
+        init_type="kaiming",
+        device="cpu",
+        temp=10.
+    ):
+        super(ResNet_MB, self).__init__()
+
+        self.meta = True
+
+        self.feat_dim = feat_dim
+        self.num_class = num_class
+
+        self.is_distill = is_distill
+        self.gamma = gamma
+        self.alpha = alpha
+        self.init_type = init_type
+
+        self.way_num = num_class
+        self.shot_num = 1
+        self.query_num = 7
+        self.device = device
+
+        self.temp = nn.Parameter(torch.tensor(temp))
+
+        # self.classifier = nn.Linear(self.feat_dim, self.num_class)
+        self.emb_func = generate_model(18, n_input_channels=1, n_classes=num_class)
+        if clinical:
+            self.fc_clinical = nn.Sequential(
+                nn.Linear(37, 256),
+                nn.ReLU(),
+                nn.Linear(256, 256),
+                nn.ReLU(),
+            )
+            self.classifier = nn.Linear(feat_dim + 256, num_class)
+        else:
+            self.classifier = nn.Linear(feat_dim, num_class)
+
+        self.ce_loss_func = nn.CrossEntropyLoss()
+        self.kl_loss_func = DistillKLLoss(T=kd_T)
+
+        self._init_network()
+
+        self.distill_layer = DistillLayer(
+            self.emb_func,
+            self.classifier,
+            self.is_distill,
+            emb_func_path,
+            classifier_path,
+        )
+
+    def _init_network(self):
+        init_weights(self, self.init_type)
+
+    def _generate_local_targets(self, episode_size):
+        local_targets = (
+            torch.arange(self.way_num, dtype=torch.long)
+            .view(1, -1, 1)
+            .repeat(episode_size, 1, self.shot_num + self.query_num)
+            .view(-1)
+        )
+        return local_targets
+
+
+    def forward(self, batch):
+        """
+
+        :param batch:
+        :return:
+        """
+        image, global_target = batch
+        label = global_target.cpu().numpy()
+        assert len(set(label)) != 1
+
+        # image = image.to(self.device)
+        with torch.no_grad():
+            feat = self.emb_func(image)
+        # support_feat, query_feat, support_target, query_target = self.split_by_episode(feat, global_target)
+
+        # support_feat, query_feat, support_target, query_target = train_test_split(feat, global_target, test_size=0.2)
+        support_ids, query_ids = train_test_split(np.arange(len(feat)))
+        while len(set(label[support_ids])) == 1:
+            support_ids, query_ids = train_test_split(np.arange(len(feat)))
+
+        support_feat = feat[support_ids]
+        query_feat = feat[query_ids]
+
+        support_label = label[support_ids]
+
+        query_label = global_target[query_ids]
+
+        feat_dict = {}
+        class_labels = set(label[support_ids])
+        for c in class_labels:
+            ids = np.arange(len(support_ids))[support_label == c]
+            feat_dict[c] = support_feat[ids]
+
+        proto = torch.stack([feat_dict[c].mean(dim=0) for c in class_labels], dim=0)
+        proto = F.normalize(proto, dim=-1)
+        query_feat = F.normalize(query_feat, dim=-1)
+        output = torch.mm(query_feat, proto.t()) * self.temp
+
+        return output, query_label
+
+    def set_forward_loss(self, batch):
+        """
+
+        :param batch:
+        :return:
+        """
+        image, global_target = batch
+        # image = image.to(self.device)
+        # global_target = global_target.to(self.device)
+
+        feat = self.emb_func(image)
+
+        if self.clinical:
+            x, x_clinical = batch
+            x_clinical = self.fc_clinical(x_clinical)
+            x = torch.cat([x, x_clinical], 1)
+            output = self.classifier(x)
+        else:
+            output = self.classifier(batch)
+
+        # output = self.classifier(feat)
+        distill_output = self.distill_layer(image)
+
+        gamma_loss = self.ce_loss_func(output, global_target)
+        alpha_loss = self.kl_loss_func(output, distill_output)
+        loss = gamma_loss * self.gamma + alpha_loss * self.alpha
+
+        acc = accuracy(output, global_target)
+
+        return output, acc, loss
+
+    def set_forward_adaptation(self, support_feat, support_target):
+        classifier = LogisticRegression(
+            penalty="l2",
+            random_state=0,
+            C=1.0,
+            solver="lbfgs",
+            max_iter=1000,
+            multi_class="multinomial",
+        )
+
+        support_feat = F.normalize(support_feat, p=2, dim=1).detach().cpu().numpy()
+        support_target = support_target.detach().cpu().numpy()
+
+        classifier.fit(support_feat, support_target)
+
+        return classifier
+
+    def train(self, mode=True):
+        self.emb_func.train(mode)
+        self.classifier.train(mode)
+        self.distill_layer.train(False)
+
+    def eval(self):
+        super(ResNet_MB, self).eval()
 
 
 def generate_model(model_depth, **kwargs):

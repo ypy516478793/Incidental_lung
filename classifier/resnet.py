@@ -117,6 +117,8 @@ class ResNet(nn.Module):
 
         block_inplanes = [int(x * widen_factor) for x in block_inplanes]
 
+        self.meta = False
+
         self.in_planes = block_inplanes[0]
         self.no_max_pool = no_max_pool
 

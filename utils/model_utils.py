@@ -148,18 +148,20 @@ def extract_cube(images, label, size):
     '''
     extract cube from the CT scan based on the ground truth label.
     :param images: CT scan, shape: (num_slices, h, w)
-    :param label: coordinates & diameter (all in pixel space): x, y, z, d
+    :param label: coordinates & diameter (all in pixel space): z, y, x, d
     :param size: size of the cube
     :return: cube centered at nodule's position, shape (num_slices, h, w)
     '''
     images = np.pad(images, ((size, size), (size, size), (size, size)), "constant", constant_values=0)
-    x, y, z = label[:3].astype(np.int) + size
+    z, y, x = label[:3].astype(np.int) + size
     d = label[-1]
     if size < d:
         print("This nodule is not totally covered in the cube!")
     cube = images[z - size // 2 : z + (size + 1) // 2,
                   y - size // 2 : y + (size + 1) // 2,
                   x - size // 2 : x + (size + 1) // 2]
+    if cube.shape != (64, 64, 64):
+        print("")
     return cube
 
 def center_stack(stack, d, savedir, rows=5, cols=6, show_every=2, patchType="Circle", show=True):
