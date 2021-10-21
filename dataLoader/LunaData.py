@@ -5,6 +5,9 @@ from torch.utils.data import Dataset
 from sklearn.model_selection import train_test_split
 from sklearn.model_selection import KFold
 
+from scipy.ndimage.interpolation import rotate
+from PIL import Image, ImageEnhance
+
 import pandas as pd
 import numpy as np
 import torch
@@ -46,19 +49,24 @@ class LunaConfig(object):
     #               "000361956-20180625"]
     # LOAD_CLINICAL = False
 
-    DATA_DIR = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/LUNA16/cubes_64"
+    DATA_DIR = "./LUNA16/cubes_64"
     CUBE_SIZE = 64
     SPLIT_SEED = 42
 
 
-    FLIP = False
-    SWAP = False
-    SCALE = False
-    ROTATE = False
-    CONSTRAST = False
-    BRIGHT = False
-    SHARP = False
-    SPLICE = False
+    ROTATE = True
+    CONTRAST = True
+    BRIGHT = True
+    SHARP = True
+
+    # FLIP = False
+    # SWAP = False
+    # SCALE = False
+    # ROTATE = False
+    # CONSTRAST = False
+    # BRIGHT = False
+    # SHARP = False
+    # SPLICE = False
 
     LOAD_CLINICAL = False
 
@@ -135,11 +143,14 @@ class LunaDataset(object):
     def __init__(self, config):
         self.config = config
         self.data_dir = config.DATA_DIR
-
+        self.n_class = 2
 
         self._imageIds = []
 
         self.load_data()
+
+        # self._augmentClass(config)
+
 
     def get_datasets(self, kfold=None, splitId=None):
         datasets = self.load_subset(random_state=self.config.SPLIT_SEED, kfold=kfold, splitId=splitId)
@@ -161,6 +172,100 @@ class LunaDataset(object):
     #     self.posCases = trainPosCases if train else valPosCases
     #     self.negCases = trainNegCases if train else valNegCases
 
+    def _augmentClass(self, config):
+
+        X, y = [self.X,], [self.y,]
+        num_aug = len(self.y) // self.n_class
+        if config.ROTATE:
+
+            angles = np.random.rand(num_aug) * 90 + 45
+            ids = np.random.choice(np.arange(len(self.X)), num_aug)
+            new_samples = np.copy(self.X[ids])
+            for s in tqdm(range(len(new_samples))):
+                sample, a = new_samples[s], angles[s]
+                new_samples[s] = rotate(sample, a, axes=(2, 3), reshape=False)
+            X.append(new_samples)
+            y.append(np.ones(num_aug) * self.n_class)
+            self.n_class += 1
+            print("Finish rotate augmentation.")
+
+        if config.CONTRAST:
+            ids = np.random.choice(np.arange(len(self.X)), num_aug)
+            new_samples = np.copy(self.X[ids])
+            for s in tqdm(range(len(new_samples))):
+                sample = new_samples[s]
+                factor = 2
+                new_sample = []
+                for i in range(sample.shape[1]):
+                    image_pil = Image.fromarray(sample[0, i].astype(np.uint8))
+                    enhancer = ImageEnhance.Contrast(image_pil)
+                    image_enhanced = enhancer.enhance(factor)
+                    new_sample.append(np.array(image_enhanced))
+                new_samples[s] = np.expand_dims(new_sample, 0)
+            X.append(new_samples)
+            y.append(np.ones(num_aug) * self.n_class)
+            self.n_class += 1
+            print("Finish contrast augmentation.")
+
+        if config.BRIGHT:
+
+            ids = np.random.choice(np.arange(len(self.X)), num_aug)
+            new_samples = np.copy(self.X[ids])
+            for s in tqdm(range(len(new_samples))):
+                sample = new_samples[s]
+                factor = 2
+                new_sample = []
+                for i in range(sample.shape[1]):
+                    image_pil = Image.fromarray(sample[0, i].astype(np.uint8))
+                    enhancer = ImageEnhance.Brightness(image_pil)
+                    image_enhanced = enhancer.enhance(factor)
+                    new_sample.append(np.array(image_enhanced))
+                new_samples[s] = np.expand_dims(new_sample, 0)
+            X.append(new_samples)
+            y.append(np.ones(num_aug) * self.n_class)
+            self.n_class += 1
+            print("Finish brightness augmentation.")
+
+        if config.SHARP:
+
+            ids = np.random.choice(np.arange(len(self.X)), num_aug)
+            new_samples = np.copy(self.X[ids])
+            for s in tqdm(range(len(new_samples))):
+                sample = new_samples[s]
+                factor = 2
+                new_sample = []
+                for i in range(sample.shape[1]):
+                    image_pil = Image.fromarray(sample[0, i].astype(np.uint8))
+                    enhancer = ImageEnhance.Sharpness(image_pil)
+                    image_enhanced = enhancer.enhance(factor)
+                    new_sample.append(np.array(image_enhanced))
+                new_samples[s] = np.expand_dims(new_sample, 0)
+            X.append(new_samples)
+            y.append(np.ones(num_aug) * self.n_class)
+            self.n_class += 1
+            print("Finish sharpness augmentation.")
+
+        # if self.ifswap:
+        #     ids = np.random.choice(np.arange(len(self.X)), num_aug)
+        #     new_samples = np.copy(self.X[ids])
+        #     for s in range(len(new_samples)):
+        #         sample = new_samples[s]
+        #         if sample.shape[1] == sample.shape[2] and sample.shape[1] == sample.shape[3]:
+        #             axisorder = np.random.permutation(3)
+        #             sample = np.transpose(sample, np.concatenate([[0], axisorder + 1]))
+        #             new_samples[s] = sample
+        #
+        # if self.ifflip:
+        #     #         flipid = np.array([np.random.randint(2),np.random.randint(2),np.random.randint(2)])*2-1
+        #     flipid = np.array([1, np.random.randint(2), np.random.randint(2)]) * 2 - 1
+        #     sample = np.ascontiguousarray(sample[:, ::flipid[0], ::flipid[1], ::flipid[2]])
+
+        # return sample
+
+        self.X = np.concatenate(X)
+        self.y = np.concatenate(y)
+
+        print("")
 
     def load_subset(self, random_state=42, kfold=None, splitId=None):
         datasets = {}
@@ -170,11 +275,11 @@ class LunaDataset(object):
         else:
             assert splitId is not None
             all_indices = np.arange(len(self.X))
-            kf_indices = [(train_index, test_index) for train_index, test_index in kfold.split(all_indices)]
+            kf_indices = [(train_index, test_index) for train_index, test_index in kfold.split(all_indices, self.y)]
             train_index, test_index = kf_indices[splitId]
             X_train, X_test = self.X[train_index], self.X[test_index]
             y_train, y_test = self.y[train_index], self.y[test_index]
-            X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2,
+            X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.1,
                                                               random_state=random_state)
         X_train, y_train = balance_any_data(X_train, y_train)
         # X_val, y_val = balance_any_data(X_val, y_val)
@@ -213,13 +318,17 @@ class LunaDataset(object):
     #     print("Shape of test_y is: ", y_test.shape)
 
     def load_data(self, reload=False):
-        data_path = os.path.join(self.data_dir, "3D_luna_cube.npz")
+        # data_path = os.path.join(self.data_dir, "3D_luna_cube.npz")
+        # data_path = os.path.join(self.data_dir, "3D_luna_cube_aug1.npz")
+        data_path = os.path.join(self.data_dir, "3D_luna_cube_160R.npz")
 
         if os.path.exists(data_path) and not reload:
             self.data = np.load(data_path, allow_pickle=True)
-            self.X, self.y = self.data["x"], self.data["y"]
+            self.X, self.y = self.data["x"], self.data["y"].astype(np.int)
         else:
             self.load_raw(data_path)
+
+        print("")
 
     def load_raw(self, data_path):
         print("Preprocessing -- Crop cubes")

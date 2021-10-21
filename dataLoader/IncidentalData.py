@@ -13,6 +13,7 @@ import os
 
 
 class IncidentalConfig(object):
+    LOAD_ALL = False
     CROP_LUNG = True
     MASK_LUNG = True
     PET_CT = None
@@ -35,9 +36,10 @@ class IncidentalConfig(object):
     # POS_LABEL_FILE = None
     # CAT_LABEL_FILE = None
 
-    DATA_DIR = "/data/pyuan2/Methodist_incidental/data_Ben/labeled/"
-    POS_LABEL_FILE = "/data/pyuan2/Methodist_incidental/data_Ben/labeled/pos_labels_norm.csv"
-    CAT_LABEL_FILE = "../data/Lung Nodule Clinical Data_Min Kim - Added Variables 10-2-2020.xlsx"
+    DATA_DIR = "./Methodist_incidental/data_Ben/resampled/"
+    POS_LABEL_FILE = "./Methodist_incidental/data_Ben/resampled/pos_labels_norm.csv"
+    CAT_LABEL_FILE = "./Methodist_incidental/Lung Nodule Clinical Data_Min Kim - Added Variables 10-2-2020.xlsx"
+    # CAT_LABEL_FILE = None
 
     BLACK_LIST = ["001030196-20121205", "005520101-20130316", "009453325-20130820", "034276428-20131212",
                   "036568905-20150714", "038654273-20160324", "011389806-20160907", "015995871-20160929",
@@ -156,8 +158,14 @@ class LungDataset(object):
         self.__screen__()
         self.load_data()
 
-    def get_datasets(self, kfold=None, splitId=None):
-        datasets = self.load_subset(random_state=self.config.SPLIT_SEED, kfold=kfold, splitId=splitId)
+    def get_datasets(self, kfold=None, splitId=None, loadAll=False, test_size=0.1):
+        if loadAll:
+            datasets_dict = {"train": Base(self.X, self.y),
+                             "val": Base(self.X, self.y),
+                             "test": Base(self.X, self.y)}
+            return datasets_dict
+
+        datasets = self.load_subset(random_state=self.config.SPLIT_SEED, kfold=kfold, splitId=splitId, test_size=test_size)
         datasets_dict = {}
         for subset in ["train", "val", "test", "train_val"]:
             if subset == "train_val":
@@ -170,7 +178,33 @@ class LungDataset(object):
         return datasets_dict
 
 
-    def load_subset(self, random_state=42, kfold=None, splitId=None):
+    # def load_subset(self, random_state=42, kfold=None, splitId=None):
+    #     datasets = {}
+    #     if kfold is None:
+    #         X_train, X_test, y_train, y_test = train_test_split(self.X, self.y, test_size=0.2, random_state=random_state)
+    #         X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2, random_state=random_state)
+    #     else:
+    #         assert splitId is not None
+    #         all_indices = np.arange(len(self.X))
+    #         kf_indices = [(train_index, test_index) for train_index, test_index in kfold.split(all_indices)]
+    #         train_index, test_index = kf_indices[splitId]
+    #         X_train, X_test = self.X[train_index], self.X[test_index]
+    #         y_train, y_test = self.y[train_index], self.y[test_index]
+    #         X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.1,
+    #                                                           random_state=random_state)
+    #         print("X_train size: ", X_train.shape)
+    #         print("X_val size: ", X_val.shape)
+    #         print("X_test size: ", X_test.shape)
+    #
+    #     X_train, y_train = balance_any_data(X_train, y_train)
+    #     X_val, y_val = balance_any_data(X_val, y_val)
+    #     datasets["train"] = {"X": X_train, "y": y_train}
+    #     datasets["val"] = {"X": X_val, "y": y_val}
+    #     datasets["test"] = {"X": X_test, "y": y_test}
+    #     return datasets
+
+
+    def load_subset(self, random_state=42, kfold=None, splitId=None, test_size=0.1):
         datasets = {}
         if kfold is None:
             X_train, X_test, y_train, y_test = train_test_split(self.X, self.y, test_size=0.2, random_state=random_state)
@@ -178,12 +212,16 @@ class LungDataset(object):
         else:
             assert splitId is not None
             all_indices = np.arange(len(self.X))
-            kf_indices = [(train_index, test_index) for train_index, test_index in kfold.split(all_indices)]
+            kf_indices = [(train_index, test_index) for train_index, test_index in kfold.split(all_indices, self.y)]
             train_index, test_index = kf_indices[splitId]
             X_train, X_test = self.X[train_index], self.X[test_index]
             y_train, y_test = self.y[train_index], self.y[test_index]
-            X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2,
+            X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=test_size,
                                                               random_state=random_state)
+            print("X_train size: ", X_train.shape)
+            print("X_val size: ", X_val.shape)
+            print("X_test size: ", X_test.shape)
+
         X_train, y_train = balance_any_data(X_train, y_train)
         X_val, y_val = balance_any_data(X_val, y_val)
         datasets["train"] = {"X": X_train, "y": y_train}
@@ -408,7 +446,7 @@ class LungDataset(object):
         patientID = imgInfo["patientID"]
         existId = (self.cat_df["MRN"].str.zfill(9) == patientID)
         cat = self.cats[existId].iloc[0]
-        cat = int(cat > 2)
+        cat = int(cat > 2)  # 1=lung cancer, 2=metastatic, 3 = benign nodule, 4= bronchiectasis/pulm sequestration/infection
 
         return cat
 

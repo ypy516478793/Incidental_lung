@@ -6,7 +6,8 @@ echo python path is ${PYTHONPATH}
 
 GPU=0,1,2,3,4,5,6,7
 
-python classify.py --gpu=${GPU} -d luna --save_dir results/release_luna/ --train True -b 16
+python classify.py --gpu=${GPU} -d luna --save_dir results/luna_test/res18/ --train False -b 16 \
+    -lm results/luna_test/res18/epoch_5.pt
 
 #for ((splitId=0; splitId<${KFOLD}; splitId+=1))
 #do

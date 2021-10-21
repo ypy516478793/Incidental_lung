@@ -3,7 +3,7 @@ Instructions:
     python classify.py -d=luna --gpu=0,1,2,3 --save_dir=results/luna/ --train=True -b=16
 """
 
-from sklearn.model_selection import KFold
+from sklearn.model_selection import StratifiedKFold
 from tqdm import tqdm
 
 from utils.plot_utils import plot_confusion_matrix
@@ -11,6 +11,8 @@ from utils.summary_utils import Logger
 from utils.data_utils import augment
 from datetime import datetime
 from classifier.resnet import generate_model
+# from classifier.resnet_rfs import ResNet_RFS
+# from classifier.resnet_mb import ResNet_MB
 
 import numpy as np
 import time
@@ -33,8 +35,8 @@ parser.add_argument("-lm", "--load_model", type=str, default=None, help="Path/Di
 parser.add_argument("-t", "--train", type=eval, default=True, help="Train phase: True or False")
 parser.add_argument("-re", "--resume", type=eval, default=False, help="Resume training")
 
-parser.add_argument("-e", "--epochs", default=10, type=int, help="number of total epochs to run")
-parser.add_argument("-b", "--batch_size", default=4, type=int, help="mini-batch size (default: 16)")
+parser.add_argument("-e", "--epochs", default=20, type=int, help="number of total epochs to run")
+parser.add_argument("-b", "--batch_size", default=16, type=int, help="mini-batch size (default: 16)")
 parser.add_argument("-op", "--optimizer", default="adam", type=str, help="adam or sgd")
 parser.add_argument("-lr", "--learning_rate", default=0.001, type=float, help="initial learning rate")
 parser.add_argument("-mo", "--momentum", default=0.9, type=float, help="momentum")
@@ -44,9 +46,11 @@ parser.add_argument("-es", "--extra_str", type=str, default="", help="extra stri
 
 parser.add_argument("-k", "--kfold", default=None, type=int, help="number of kfold for train_val")
 parser.add_argument("-ki", "--splitId", default=None, type=int, help="split id when use kfold")
+parser.add_argument("-ts", "--test_size", default=0.1, type=float, help="test size when use kfold")
 
 args = parser.parse_args()
 os.environ["CUDA_VISIBLE_DEVICES"]= args.gpu
+n_gpu = len(args.gpu.split(","))
 
 
 from torch.utils.tensorboard import SummaryWriter
@@ -55,6 +59,11 @@ import torch.optim as optim
 import torch.nn as nn
 import torchvision
 import torch
+
+def freeze_bn(model):
+    for m in model.modules():
+        if isinstance(m, nn.BatchNorm2d):
+            m.eval()
 
 def train(trainLoader, testLoader, trainValLoader, augmentor, model, optimizer, scheduler, criterion, save_dir,
           epochs=30, start_epoch=0):
@@ -110,7 +119,14 @@ def train(trainLoader, testLoader, trainValLoader, augmentor, model, optimizer, 
             # Zero the parameter gradients
             optimizer.zero_grad()
             # Forward pass
-            outputs = model(inputs)
+            sample_batch = inputs, labels
+            meta = model.meta if n_gpu == 1 else model.module.meta
+            if meta:
+                outputs, labels = model(sample_batch)
+            else:
+                outputs = model(inputs)
+            # preds_ref, acc_ref, labels, outputs = model(sample_batch)
+
             loss = criterion(outputs, labels)
             _, preds = torch.max(outputs, 1)
             probs = nn.functional.softmax(outputs, 1)[:, 1]
@@ -181,18 +197,20 @@ def train(trainLoader, testLoader, trainValLoader, augmentor, model, optimizer, 
                 best_val_loss = epoch_loss
                 best_acc = epoch_acc
                 best_epoch = epoch + 1
+                model_copy = copy.deepcopy(model)
 
         else:
             scheduler.step(epoch_loss)
         print("=" * 50)
 
-    if trainValLoader is not None:
-        # Retrain on train_val dataset
-        model_copy = full_train(trainValLoader, augmentor, model_copy, optimizer, criterion, start_epoch, best_epoch,
-               plot_folder, num_classes, print_per_iteration)
-        torch.save(model_copy.state_dict(), os.path.join(save_dir, "full_epoch_" + str(best_epoch) + ".pt"))
-    else:
-        model_copy = model
+    ### Retrain on whole train-val dataset using best_epoch number from pervious step
+    # if trainValLoader is not None:
+    #     # Retrain on train_val dataset
+    #     model_copy = full_train(trainValLoader, augmentor, model_copy, optimizer, criterion, start_epoch, best_epoch,
+    #            plot_folder, num_classes, print_per_iteration)
+    #     torch.save(model_copy.state_dict(), os.path.join(save_dir, "full_epoch_" + str(best_epoch) + ".pt"))
+    # else:
+    #     model_copy = model
 
     if testLoader:
         from utils.plot_utils import plot_learning_cuvre
@@ -306,7 +324,14 @@ def val(testLoader, model, criterion, plot_folder, epoch, num_classes):
             labels = labels.to(device)
 
         # Forward pass
-        outputs = model(inputs)
+        sample_batch = inputs, labels
+        # preds_ref, acc_ref, labels, outputs = model(sample_batch)
+        meta = model.meta if n_gpu == 1 else model.module.meta
+        if meta:
+            outputs, labels = model(sample_batch)
+        else:
+            outputs = model(inputs)
+
         loss = criterion(outputs, labels)
         _, preds = torch.max(outputs, 1)
         probs = nn.functional.softmax(outputs, 1)[:, 1]
@@ -353,7 +378,13 @@ def test(testLoader, model, criterion, save_folder, plot_folder, epoch, num_clas
             inputs = inputs.float().to(device)
             labels = labels.to(device)
         # Forward pass
-        outputs = model(inputs)
+        sample_batch = inputs, labels
+        # preds_ref, acc_ref, labels, outputs = model(sample_batch)
+        meta = model.meta if n_gpu == 1 else model.module.meta
+        if meta:
+            outputs, labels = model(sample_batch)
+        else:
+            outputs = model(inputs)
         loss = criterion(outputs, labels)
         _, preds = torch.max(outputs, 1)
         probs = nn.functional.softmax(outputs, 1)[:, 1]
@@ -382,6 +413,19 @@ def test(testLoader, model, criterion, save_folder, plot_folder, epoch, num_clas
     plot_confusion_matrix(plot_folder, file_name, all_labels, all_preds, epoch, num_classes)
 
 
+def test_loop(testLoader, model, criterion, save_dir, plot_dir, start_epoch, num_classes):
+    """
+    The normal test loop: test and cal the 0.95 mean_confidence_interval.
+    """
+    total_accuracy = 0.0
+    test_epoch = 5
+    total_h = np.zeros(test_epoch)
+    total_accuracy_vector = []
+
+    for epoch_idx in range(test_epoch):
+        print("============ Testing on the test set ============")
+        test(testLoader, model, criterion, save_dir, plot_dir, start_epoch, num_classes)
+
 
 def main():
     ## ----- Load parameters ----- ##
@@ -399,6 +443,7 @@ def main():
     num_classes = args.n_classes
     optimStr = args.optimizer
     workers = args.workers
+    test_size = args.test_size
 
     ## ----- Create logger ----- ##
     model_folder = "{:s}_{:s}".format(model_name, extra_str) if len(extra_str) > 0 else model_name
@@ -429,8 +474,9 @@ def main():
 
         config = IncidentalConfig()
         lungData = LungDataset(config)
-        kfold = KFold(n_splits=args.kfold, random_state=42) if kfold is not None else None
-        datasets = lungData.get_datasets(kfold=kfold, splitId=splitId)
+        kfold = StratifiedKFold(n_splits=args.kfold, random_state=42) if kfold is not None else None
+        # kfold = Kfold(n_splits=args.kfold, random_state=42) if kfold is not None else None
+        datasets = lungData.get_datasets(kfold=kfold, splitId=splitId, loadAll=config.LOAD_ALL, test_size=test_size)
         # kfold = len(lungData.y) if kfold is None else args.kfold
         # kfold = KFold(n_splits=kfold, random_state=42)
 
@@ -470,10 +516,10 @@ def main():
 
         config = LunaConfig()
         lunaData = LunaDataset(config)
+        kfold = StratifiedKFold(n_splits=args.kfold, random_state=42) if kfold is not None else None
         datasets = lunaData.get_datasets(kfold=kfold, splitId=splitId)
         # kfold = len(lungData.y) if kfold is None else args.kfold
         # kfold = KFold(n_splits=kfold, random_state=42)
-
         # trainLoader = DataLoader(datasets["train"], batch_size=batch_size, shuffle=True, collate_fn=collate)
         trainLoader = DataLoader(datasets["train"], batch_size=batch_size, shuffle=True, num_workers=workers)
         if kfold is not None:
@@ -497,13 +543,21 @@ def main():
     print("Shape of val_x is: ", (len(datasets["val"]), 1,) + (config.CUBE_SIZE,) * 3)
     print("Shape of val_y is: ", (len(datasets["val"]),))
 
-    augmentor = augment(ifflip=config.FLIP, ifrotate=config.ROTATE, ifswap=config.SWAP)
+    # augmentor = augment(ifflip=config.FLIP, ifrotate=config.ROTATE, ifswap=config.SWAP)
+    augmentor = augment()
     config.display()
 
     ## ----- Construct models ----- ##
+    # Detect if we have a GPU available
+    global device
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     if model_name == "res18":
         model = generate_model(18, n_input_channels=1, n_classes=num_classes, clinical=config.LOAD_CLINICAL)
+
+        # model = ResNet_RFS(512, 2, device=device)
+        # model = ResNet_MB(512, 2, device=device)
+
     print("Use model: {:s}".format(model_name))
 
 
@@ -526,12 +580,19 @@ def main():
             from collections import OrderedDict
             new_state_dict = OrderedDict()
             for k, v in state_dict.items():
-                if "module." in k:
-                    name = k.replace("module.", "")
-                else:
-                    name = "module." + k  # add "module." for dataparallel
+                # if "module." in k:
+                #     name = k.replace("module.", "")
+                # else:
+                #     name = "module." + k  # add "module." for dataparallel
+                name = k
+                if "fc" in k:
+                    continue
+                    # name = name.replace("fc", "classifier")
+                # if "emb_func" not in k and "fc" not in k:
+                #     name = "emb_func." + name
                 new_state_dict[name] = v
-            model.load_state_dict(new_state_dict)
+            # model.load_state_dict(new_state_dict)
+            model.emb_func.load_state_dict(new_state_dict)
 
         print("Load successfully from " + load_path)
     else:
@@ -540,11 +601,11 @@ def main():
         start_epoch = 0
 
     # Print the model we just instantiated
+    model = model.to(device)
     print(model)
 
-    # Detect if we have a GPU available
-    global device
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    freeze_bn(model) #!!!!!!!!
+
     # if torch.cuda.is_available():
     #     print("using GPU now!")
 
@@ -606,7 +667,8 @@ def main():
         model, start_epoch = train(trainLoader, valLoader, trainValLoader, augmentor, model, optimizer, scheduler, criterion, save_dir, epochs, start_epoch)
         test(testLoader, model, criterion, save_dir, plot_dir, start_epoch, num_classes)
     else:
-        test(testLoader, model, criterion, save_dir, plot_dir, start_epoch, num_classes)
+        test_loop(testLoader, model, criterion, save_dir, plot_dir, start_epoch, num_classes)
+        # test(testLoader, model, criterion, save_dir, plot_dir, start_epoch, num_classes)
 
 
 

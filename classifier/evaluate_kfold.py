@@ -1,19 +1,18 @@
-from sklearn.model_selection import train_test_split, KFold
 from sklearn.metrics import average_precision_score
 from sklearn.metrics import precision_recall_curve
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import roc_auc_score
-from sklearn.metrics import roc_curve, auc
-from functools import reduce
+from sklearn.metrics import roc_curve
+from sklearn.metrics import classification_report
+from utils.summary_utils import Logger
 
-import imgaug.augmenters as iaa
-import tensorflow as tf
 import argparse
 
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
 import numpy as np
+import sys
 import os
 
 
@@ -48,7 +47,8 @@ def test(model_dir, model_name, kfold=5):
     os.makedirs(model_dir, exist_ok=True)
     # fpr, tpr, ths = roc_curve(labels_test[:, 0], probs_test[:, 0])
     fpr, tpr, ths = roc_curve(1-labels_test, 1-probs_test)
-    roc_auc = auc(fpr, tpr)
+    # roc_auc = auc(fpr, tpr)
+    roc_auc = roc_auc_score(1-labels_test, 1-probs_test)
     plt.figure()
     lw = 2
     plt.plot(fpr, tpr, color='darkorange',
@@ -69,7 +69,10 @@ def test(model_dir, model_name, kfold=5):
     confMat = confusion_matrix(all_label, all_pred)
     df_cm = pd.DataFrame(confMat, index=["maligant", "benign"],
                          columns=["maligant", "benign"])
-    print("Test confusion matrix with th_0.5:")
+    print("\n ---------- Threshold is {:f} ---------- ".format(0.5))
+    print("Classification report with th_{:f}: ".format(0.5))
+    print(classification_report(all_label, all_pred))
+    print("Test confusion matrix with th_{:f}: ".format(0.5))
     print(df_cm)
     plt.figure()
     # sns.heatmap(df_cm, annot=True, cmap="YlGnBu")
@@ -88,7 +91,7 @@ def test(model_dir, model_name, kfold=5):
     confMat = confusion_matrix(all_label, all_pred_new)
     df_cm = pd.DataFrame(confMat, index=["maligant", "benign"],
                          columns=["maligant", "benign"])
-    from sklearn.metrics import classification_report
+    print("\n ---------- Threshold is {:f} ---------- ".format(optimal_threshold))
     print("Classification report with th_{:f}: ".format(optimal_threshold))
     print(classification_report(all_label, all_pred_new))
     print("Test confusion matrix with th_{:f}: ".format(optimal_threshold))
@@ -110,7 +113,7 @@ def test(model_dir, model_name, kfold=5):
     confMat = confusion_matrix(all_label, all_pred_new)
     df_cm = pd.DataFrame(confMat, index=["maligant", "benign"],
                          columns=["maligant", "benign"])
-    from sklearn.metrics import classification_report
+    print("\n ---------- Threshold is {:f} ---------- ".format(select_th))
     print("Classification report with th_{:f}: ".format(select_th))
     print(classification_report(all_label, all_pred_new))
     print("Test confusion matrix with th_{:f}: ".format(select_th))
@@ -126,10 +129,10 @@ def test(model_dir, model_name, kfold=5):
     plt.close()
 
 
-    average_precision = average_precision_score(1 - labels_test, 1 - probs_test)
+    AP = average_precision_score(1 - labels_test, 1 - probs_test)
     precision, recall, thresholds = precision_recall_curve(1 - labels_test, 1 - probs_test)
     plt.figure()
-    plt.plot(recall, precision, label='precision-recall curve (AP = %0.2f)' % average_precision)
+    plt.plot(recall, precision, label='precision-recall curve (AP = %0.2f)' % AP)
     plt.xlim([0.0, 1.05])
     plt.ylim([0.0, 1.05])
     plt.xlabel('Recall')
@@ -139,7 +142,17 @@ def test(model_dir, model_name, kfold=5):
     plt.savefig(os.path.join(model_dir, "precision_recall_curve.png"), bbox_inches="tight", dpi=200)
     plt.close()
 
+    with open(os.path.join(model_dir, "results.csv"), "w") as f:
+        f.write("AUC-ROC, AP\n")
+        f.write("{:f}, {:f}".format(roc_auc, AP))
+
 def main():
+
+    log_file = "eval.log"
+    log_path = os.path.join(args.save_dir, log_file)
+    sys.stdout = Logger(log_path)
+    print("=" * 100)
+    print("Working in directory: {:s}\n".format(args.save_dir))
 
     test(args.save_dir, args.model, args.kfold)
 
