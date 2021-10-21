@@ -37,6 +37,7 @@ class IncidentalConfig(object):
     # CAT_LABEL_FILE = None
 
     DATA_DIR = "./Methodist_incidental/data_Ben/modeNorm/"
+    # DATA_DIR = "./Methodist_incidental/data_Ben/resampled/"
     POS_LABEL_FILE = "./Methodist_incidental/data_Ben/resampled/pos_labels_norm.csv"
     CAT_LABEL_FILE = "./Methodist_incidental/Lung Nodule Clinical Data_Min Kim - Added Variables 10-2-2020.xlsx"
     # CAT_LABEL_FILE = None
@@ -212,7 +213,7 @@ class LungDataset(object):
         else:
             assert splitId is not None
             all_indices = np.arange(len(self.X))
-            kf_indices = [(train_index, test_index) for train_index, test_index in kfold.split(all_indices)]
+            kf_indices = [(train_index, test_index) for train_index, test_index in kfold.split(all_indices, self.y)]
             train_index, test_index = kf_indices[splitId]
             X_train, X_test = self.X[train_index], self.X[test_index]
             y_train, y_test = self.y[train_index], self.y[test_index]
@@ -448,7 +449,6 @@ class LungDataset(object):
         existId = (self.cat_df["MRN"].str.zfill(9) == patientID)
         cat = self.cats[existId].iloc[0]
         cat = int(cat <= 2)  # 1=lung cancer, 2=metastatic, 3 = benign nodule, 4= bronchiectasis/pulm sequestration/infection
-
         return cat
 
     def get_clinical(self, imageId):

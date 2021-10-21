@@ -3,7 +3,7 @@ Instructions:
     python classify.py -d=luna --gpu=0,1,2,3 --save_dir=results/luna/ --train=True -b=16
 """
 
-from sklearn.model_selection import KFold
+from sklearn.model_selection import StratifiedKFold
 from tqdm import tqdm
 
 from utils.plot_utils import plot_confusion_matrix
@@ -474,7 +474,8 @@ def main():
 
         config = IncidentalConfig()
         lungData = LungDataset(config)
-        kfold = KFold(n_splits=args.kfold, random_state=42) if kfold is not None else None
+        kfold = StratifiedKFold(n_splits=args.kfold, random_state=42) if kfold is not None else None
+        # kfold = Kfold(n_splits=args.kfold, random_state=42) if kfold is not None else None
         datasets = lungData.get_datasets(kfold=kfold, splitId=splitId, loadAll=config.LOAD_ALL, test_size=test_size)
         # kfold = len(lungData.y) if kfold is None else args.kfold
         # kfold = KFold(n_splits=kfold, random_state=42)
@@ -515,10 +516,10 @@ def main():
 
         config = LunaConfig()
         lunaData = LunaDataset(config)
+        kfold = StratifiedKFold(n_splits=args.kfold, random_state=42) if kfold is not None else None
         datasets = lunaData.get_datasets(kfold=kfold, splitId=splitId)
         # kfold = len(lungData.y) if kfold is None else args.kfold
         # kfold = KFold(n_splits=kfold, random_state=42)
-
         # trainLoader = DataLoader(datasets["train"], batch_size=batch_size, shuffle=True, collate_fn=collate)
         trainLoader = DataLoader(datasets["train"], batch_size=batch_size, shuffle=True, num_workers=workers)
         if kfold is not None:

@@ -275,7 +275,7 @@ class LunaDataset(object):
         else:
             assert splitId is not None
             all_indices = np.arange(len(self.X))
-            kf_indices = [(train_index, test_index) for train_index, test_index in kfold.split(all_indices)]
+            kf_indices = [(train_index, test_index) for train_index, test_index in kfold.split(all_indices, self.y)]
             train_index, test_index = kf_indices[splitId]
             X_train, X_test = self.X[train_index], self.X[test_index]
             y_train, y_test = self.y[train_index], self.y[test_index]
@@ -319,8 +319,8 @@ class LunaDataset(object):
 
     def load_data(self, reload=False):
         # data_path = os.path.join(self.data_dir, "3D_luna_cube.npz")
-        data_path = os.path.join(self.data_dir, "3D_luna_cube_aug1.npz")
-
+        # data_path = os.path.join(self.data_dir, "3D_luna_cube_aug1.npz")
+        data_path = os.path.join(self.data_dir, "3D_luna_cube_160R.npz")
         # if os.path.exists(data_path) and not reload:
         self.data = np.load(data_path, allow_pickle=True)
         self.X, self.y = self.data["x"], self.data["y"].astype(np.int)
