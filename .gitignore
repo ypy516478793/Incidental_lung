@@ -13,3 +13,7 @@ data_mamta/
 multiple_nodules/
 Methodist_incidental/
 LUNA16/
+.DS_Store
+dataLoader/__pycache__/
+exp.py
+plots/

@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 import os
 
-def prepare_cubes(data_dir, size, label_path=None):
+def prepare_cubes(data_dir, size, all_label_path=None):
 
     cat_label_file = "./Methodist_incidental/Methodist_clinical_labels.xlsx"
     cat_df = pd.read_excel(cat_label_file, sheet_name='Sheet1')
@@ -15,7 +15,7 @@ def prepare_cubes(data_dir, size, label_path=None):
     cats = dict(cat_df[["Patient", "Malignancy"]].values)
 
 
-    suffix = "_clean.npz" if label_path is None else ".npz"
+    suffix = "_clean.npz" if all_label_path is None else ".npz"
     x, y = [], []
 
     data_ls = []
@@ -35,11 +35,11 @@ def prepare_cubes(data_dir, size, label_path=None):
         dirname = os.path.dirname(data_path)
         filename = os.path.basename(data_path).rstrip("_clean.npz")
 
-        if label_path is None:
+        if all_label_path is None:
             label_path = os.path.join(dirname, filename + "_label.npz")
             label = np.load(label_path, allow_pickle=True)["label"]
         else:
-            pos_df = pd.read_csv(label_path)
+            pos_df = pd.read_csv(all_label_path)
             pstr, dstr = filename.split("-")
             patient_colname = "patient" if "patient" in pos_df.columns else 'Patient\n Index'
             assert patient_colname in pos_df
@@ -71,8 +71,8 @@ if __name__ == '__main__':
     # data_dir = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/Methodist_incidental/data_Ben/resampled"
     # label_path = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/Methodist_incidental/data_Ben/resampled/pos_labels_norm.csv"
     # data_dir = "/home/cougarnet.uh.edu/pyuan2/Projects/DeepLung-3D_Lung_Nodule_Detection/Methodist_incidental/data_Ben/masked"
-    data_dir = "/home/cougarnet.uh.edu/pyuan2/Projects/DeepLung-3D_Lung_Nodule_Detection/Methodist_incidental/data_Ben/modeNorm2"
+    data_dir = "/home/cougarnet.uh.edu/pyuan2/Projects/DeepLung-3D_Lung_Nodule_Detection/Methodist_incidental/data_Ben/modeNorm3"
     label_path = None
     size = 64
     max_nodule_size = 60
-    prepare_cubes(data_dir, size, label_path=label_path)
+    prepare_cubes(data_dir, size, all_label_path=label_path)

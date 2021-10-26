@@ -320,7 +320,8 @@ class LunaDataset(object):
     def load_data(self, reload=False):
         # data_path = os.path.join(self.data_dir, "3D_luna_cube.npz")
         # data_path = os.path.join(self.data_dir, "3D_luna_cube_aug1.npz")
-        data_path = os.path.join(self.data_dir, "3D_luna_cube_160R.npz")
+        data_path = os.path.join(self.data_dir, "3D_luna_cube_1800R.npz")
+        # data_path = os.path.join(self.data_dir, "3D_luna_cube_160R.npz")
         # if os.path.exists(data_path) and not reload:
         self.data = np.load(data_path, allow_pickle=True)
         self.X, self.y = self.data["x"], self.data["y"].astype(np.int)

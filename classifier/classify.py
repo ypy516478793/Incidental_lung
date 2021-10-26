@@ -25,6 +25,7 @@ import argparse
 parser = argparse.ArgumentParser(description="Incidental lung nodule classification")
 parser.add_argument("-d", "--datasource", type=str, default="methodist", help="Dataset used for training/test",
                     choices=["luna", "lunaRaw", "methoidstPilot", "methodist", "additional"])
+parser.add_argument("-p", "--data_dir", type=str, help="Data directory", default=None)
 parser.add_argument("-s", "--save_dir", type=str, help="Save directory")
 parser.add_argument("-g", "--gpu", type=str, default="0,1,2,3", help="Which gpus to use")
 
@@ -426,6 +427,12 @@ def test_loop(testLoader, model, criterion, save_dir, plot_dir, start_epoch, num
         print("============ Testing on the test set ============")
         test(testLoader, model, criterion, save_dir, plot_dir, start_epoch, num_classes)
 
+def merge_args(config, args):
+    if args.data_dir is not None:
+        config.DATA_DIR = args.data_dir
+    # if args.pad_value is not None:
+    #     config.PAD_VALUE = args.pad_value
+    return config
 
 def main():
     ## ----- Load parameters ----- ##
@@ -473,6 +480,7 @@ def main():
         from utils.model_utils import collate
 
         config = IncidentalConfig()
+        config = merge_args(config, args)
         lungData = LungDataset(config)
         kfold = StratifiedKFold(n_splits=args.kfold, random_state=42) if kfold is not None else None
         # kfold = Kfold(n_splits=args.kfold, random_state=42) if kfold is not None else None
@@ -515,6 +523,7 @@ def main():
         from dataLoader.LunaData import LunaDataset, LunaConfig
 
         config = LunaConfig()
+        config = merge_args(config, args)
         lunaData = LunaDataset(config)
         kfold = StratifiedKFold(n_splits=args.kfold, random_state=42) if kfold is not None else None
         datasets = lunaData.get_datasets(kfold=kfold, splitId=splitId)

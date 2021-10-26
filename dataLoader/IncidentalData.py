@@ -28,7 +28,7 @@ class IncidentalConfig(object):
     # DATA_DIR = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/data_king/unlabeled/"
     # DATA_DIR = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/data/raw_data/unlabeled/"
     # DATA_DIR = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/data_mamta/processed_data/unlabeled/"
-    INFO_FILE = "CTinfo.npz"
+    # INFO_FILE = "CTinfo.npz"
     # POS_LABEL_FILE = "pos_labels_norm.csv"
     # POS_LABEL_FILE = "pos_labels_norm.csv"
     # POS_LABEL_FILE = "gt_labels_checklist.xlsx"
@@ -152,11 +152,11 @@ class LungDataset(object):
         if config.LOAD_CLINICAL:
             self.clinical_preprocessing()
         # Process imageInfo (Load subset)
-        self.imageInfo = np.load(os.path.join(config.DATA_DIR, "CTinfo.npz"), allow_pickle=True)["info"]
-        self.imageInfo = np.array(self.imageInfo)
-        self.__remove_duplicate__()
-        self.__check_labels__()
-        self.__screen__()
+        # self.imageInfo = np.load(os.path.join(config.DATA_DIR, "CTinfo.npz"), allow_pickle=True)["info"]
+        # self.imageInfo = np.array(self.imageInfo)
+        # self.__remove_duplicate__()
+        # self.__check_labels__()
+        # self.__screen__()
         self.load_data()
 
     def get_datasets(self, kfold=None, splitId=None, loadAll=False, test_size=0.1):
