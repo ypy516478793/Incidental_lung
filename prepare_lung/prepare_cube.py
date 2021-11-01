@@ -71,8 +71,9 @@ if __name__ == '__main__':
     # data_dir = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/Methodist_incidental/data_Ben/resampled"
     # label_path = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/Methodist_incidental/data_Ben/resampled/pos_labels_norm.csv"
     # data_dir = "/home/cougarnet.uh.edu/pyuan2/Projects/DeepLung-3D_Lung_Nodule_Detection/Methodist_incidental/data_Ben/masked"
-    data_dir = "/home/cougarnet.uh.edu/pyuan2/Projects/DeepLung-3D_Lung_Nodule_Detection/Methodist_incidental/data_Ben/modeNorm3"
+    # data_dir = "/home/cougarnet.uh.edu/pyuan2/Projects/DeepLung-3D_Lung_Nodule_Detection/Methodist_incidental/data_Ben/modeNorm3"
+    data_dir = "/home/cougarnet.uh.edu/pyuan2/Projects/DeepLung-3D_Lung_Nodule_Detection/Methodist_incidental/data_Ben/preprocessed"
     label_path = None
-    size = 64
+    size = 32
     max_nodule_size = 60
     prepare_cubes(data_dir, size, all_label_path=label_path)

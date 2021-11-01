@@ -16,6 +16,7 @@ import os
 
 
 class LunaConfig(object):
+    LOAD_ALL = False
     # CROP_LUNG = True
     # MASK_LUNG = True
     # PET_CT = None
@@ -49,8 +50,11 @@ class LunaConfig(object):
     #               "000361956-20180625"]
     # LOAD_CLINICAL = False
 
-    DATA_DIR = "./LUNA16/cubes_64"
-    CUBE_SIZE = 64
+    # DATA_DIR = "./LUNA16/cubes_64"
+    # CUBE_SIZE = 64
+
+    DATA_DIR = "./LUNA16/cls/crop_v5"
+    CUBE_SIZE = 32
     SPLIT_SEED = 42
 
 
@@ -152,8 +156,14 @@ class LunaDataset(object):
         # self._augmentClass(config)
 
 
-    def get_datasets(self, kfold=None, splitId=None):
-        datasets = self.load_subset(random_state=self.config.SPLIT_SEED, kfold=kfold, splitId=splitId)
+    def get_datasets(self, kfold=None, splitId=None, loadAll=False, test_size=0.1):
+        if loadAll:
+            datasets_dict = {"train": Base(self.X, self.y),
+                             "val": Base(self.X, self.y),
+                             "test": Base(self.X, self.y)}
+            return datasets_dict
+
+        datasets = self.load_subset(random_state=self.config.SPLIT_SEED, kfold=kfold, splitId=splitId, test_size=test_size)
         datasets_dict = {}
         for subset in ["train", "val", "test", "train_val"]:
             if subset == "train_val":
@@ -267,7 +277,7 @@ class LunaDataset(object):
 
         print("")
 
-    def load_subset(self, random_state=42, kfold=None, splitId=None):
+    def load_subset(self, random_state=42, kfold=None, splitId=None, test_size=0.1):
         datasets = {}
         if kfold is None:
             X_train, X_test, y_train, y_test = train_test_split(self.X, self.y, test_size=0.2, random_state=random_state)
@@ -279,8 +289,12 @@ class LunaDataset(object):
             train_index, test_index = kf_indices[splitId]
             X_train, X_test = self.X[train_index], self.X[test_index]
             y_train, y_test = self.y[train_index], self.y[test_index]
-            X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.1,
+            X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=test_size,
                                                               random_state=random_state)
+            print("X_train size: ", X_train.shape)
+            print("X_val size: ", X_val.shape)
+            print("X_test size: ", X_test.shape)
+
         X_train, y_train = balance_any_data(X_train, y_train)
         # X_val, y_val = balance_any_data(X_val, y_val)
         datasets["train"] = {"X": X_train, "y": y_train}
@@ -318,15 +332,46 @@ class LunaDataset(object):
     #     print("Shape of test_y is: ", y_test.shape)
 
     def load_data(self, reload=False):
-        # data_path = os.path.join(self.data_dir, "3D_luna_cube.npz")
-        # data_path = os.path.join(self.data_dir, "3D_luna_cube_aug1.npz")
-        data_path = os.path.join(self.data_dir, "3D_luna_cube_1800R.npz")
-        # data_path = os.path.join(self.data_dir, "3D_luna_cube_160R.npz")
-        # if os.path.exists(data_path) and not reload:
-        self.data = np.load(data_path, allow_pickle=True)
-        self.X, self.y = self.data["x"], self.data["y"].astype(np.int)
-        # else:
-        #     self.load_raw(data_path)
+        dataframe = pd.read_csv('LUNA16/cls/annotationdetclsconvfnl_v3.csv')
+        # names=['seriesuid', 'coordX', 'coordY', 'coordZ', 'diameter_mm', 'malignant']
+        alllst = dataframe['seriesuid'].tolist()
+        labellst = dataframe['malignant'].tolist()
+        crdxlst = dataframe['coordX'].tolist()
+        crdylst = dataframe['coordY'].tolist()
+        crdzlst = dataframe['coordZ'].tolist()
+        dimlst = dataframe['diameter_mm'].tolist()
+
+        self.X, self.y = [], []
+        for srsid, label in zip(alllst, labellst):
+            data = np.load(os.path.join(self.data_dir, srsid + '.npy'))
+            self.X.append(data)
+            self.y.append(int(label))
+        self.X = np.expand_dims(self.X, axis=1)
+        self.y = np.array(self.y)
+
+        # # data_path = os.path.join(self.data_dir, "3D_luna_cube.npz")
+        # # data_path = os.path.join(self.data_dir, "3D_luna_cube_aug1.npz")
+        # data_path = os.path.join(self.data_dir, "3D_luna_cube_1800R.npz")
+        # # data_path = os.path.join(self.data_dir, "3D_luna_cube_160R.npz")
+        # # if os.path.exists(data_path) and not reload:
+        # self.data = np.load(data_path, allow_pickle=True)
+        # self.X, self.y = self.data["x"], self.data["y"].astype(np.int)
+        # # else:
+        # #     self.load_raw(data_path)
+
+        ## Generate 160 ids
+        # all_indices = np.arange(len(self.y))
+        # mal_ids = all_indices[self.y == 1]
+        # bgn_ids = all_indices[self.y == 0]
+        # mal_ids_120 = np.random.choice(mal_ids, 120, replace=False)
+        # bgn_ids_40 = np.random.choice(bgn_ids, 40, replace=False)
+        # np.savez_compressed("./LUNA16/cls/160_ids.npz", mal_ids=mal_ids_120, bgn_ids=bgn_ids_40)
+
+        ids = np.load("./LUNA16/cls/160_ids.npz")
+        mal_ids_120 = ids["mal_ids"]
+        bgn_ids_40 = ids["bgn_ids"]
+        self.X = self.X[np.concatenate([bgn_ids_40, mal_ids_120])]
+        self.y = self.y[np.concatenate([bgn_ids_40, mal_ids_120])]
 
         print("")
 

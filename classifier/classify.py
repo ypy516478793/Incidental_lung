@@ -41,13 +41,14 @@ parser.add_argument("-b", "--batch_size", default=16, type=int, help="mini-batch
 parser.add_argument("-op", "--optimizer", default="adam", type=str, help="adam or sgd")
 parser.add_argument("-lr", "--learning_rate", default=0.001, type=float, help="initial learning rate")
 parser.add_argument("-mo", "--momentum", default=0.9, type=float, help="momentum")
-parser.add_argument("-wd", "--weight_decay", default=1e-3, type=float, help="weight decay (default: 1e-4)")
+parser.add_argument("-wd", "--weight_decay", default=1e-3, type=float, help="weight dec)ay (default: 1e-4)")
 
 parser.add_argument("-es", "--extra_str", type=str, default="", help="extra string for data")
 
 parser.add_argument("-k", "--kfold", default=None, type=int, help="number of kfold for train_val")
 parser.add_argument("-ki", "--splitId", default=None, type=int, help="split id when use kfold")
 parser.add_argument("-ts", "--test_size", default=0.1, type=float, help="test size when use kfold")
+parser.add_argument("-la", "--load_all", default=None, type=eval, help="whether to load all data")
 
 args = parser.parse_args()
 os.environ["CUDA_VISIBLE_DEVICES"]= args.gpu
@@ -430,6 +431,8 @@ def test_loop(testLoader, model, criterion, save_dir, plot_dir, start_epoch, num
 def merge_args(config, args):
     if args.data_dir is not None:
         config.DATA_DIR = args.data_dir
+    if args.load_all is not None:
+        config.LOAD_ALL = args.load_all
     # if args.pad_value is not None:
     #     config.PAD_VALUE = args.pad_value
     return config
@@ -451,6 +454,7 @@ def main():
     optimStr = args.optimizer
     workers = args.workers
     test_size = args.test_size
+    load_all = args.load_all
 
     ## ----- Create logger ----- ##
     model_folder = "{:s}_{:s}".format(model_name, extra_str) if len(extra_str) > 0 else model_name
@@ -526,7 +530,7 @@ def main():
         config = merge_args(config, args)
         lunaData = LunaDataset(config)
         kfold = StratifiedKFold(n_splits=args.kfold, random_state=42) if kfold is not None else None
-        datasets = lunaData.get_datasets(kfold=kfold, splitId=splitId)
+        datasets = lunaData.get_datasets(kfold=kfold, splitId=splitId, loadAll=config.LOAD_ALL, test_size=test_size)
         # kfold = len(lungData.y) if kfold is None else args.kfold
         # kfold = KFold(n_splits=kfold, random_state=42)
         # trainLoader = DataLoader(datasets["train"], batch_size=batch_size, shuffle=True, collate_fn=collate)
@@ -589,19 +593,25 @@ def main():
             from collections import OrderedDict
             new_state_dict = OrderedDict()
             for k, v in state_dict.items():
-                # if "module." in k:
-                #     name = k.replace("module.", "")
-                # else:
-                #     name = "module." + k  # add "module." for dataparallel
-                name = k
-                if "fc" in k:
-                    continue
-                    # name = name.replace("fc", "classifier")
-                # if "emb_func" not in k and "fc" not in k:
-                #     name = "emb_func." + name
+                assert "module." in k
+                name = k.replace("module.", "")
                 new_state_dict[name] = v
-            # model.load_state_dict(new_state_dict)
-            model.emb_func.load_state_dict(new_state_dict)
+            model.load_state_dict(new_state_dict)
+
+            # ## Load emb_func only
+            # for k, v in state_dict.items():
+            #     # if "module." in k:
+            #     #     name = k.replace("module.", "")
+            #     # else:
+            #     #     name = "module." + k  # add "module." for dataparallel
+            #     name = k
+            #     if "fc" in k:
+            #         continue
+            #         # name = name.replace("fc", "classifier")
+            #     # if "emb_func" not in k and "fc" not in k:
+            #     #     name = "emb_func." + name
+            #     new_state_dict[name] = v
+            # model.emb_func.load_state_dict(new_state_dict)
 
         print("Load successfully from " + load_path)
     else:

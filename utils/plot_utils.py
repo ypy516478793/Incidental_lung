@@ -64,4 +64,4 @@ def plot_learning_curve_train_size(result_dir, kfold=10, datasize=160):
     print("")
 
 if __name__ == '__main__':
-    plot_learning_curve_train_size("/home/cougarnet.uh.edu/pyuan2/Projects2021/Incidental_lung/classifier/results/LearnCurve_luna_1800", datasize=1800)
+    plot_learning_curve_train_size("/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/classifier/results/LearnCurve_luna_160", datasize=160)

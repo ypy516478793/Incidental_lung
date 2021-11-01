@@ -262,6 +262,7 @@ class LungDataset(object):
     def load_data(self, reload=False):
         # data_path = os.path.join(self.data_dir, "3D_incidental_lung_multiNeg.npz")
         data_path = os.path.join(self.data_dir, "Methodist_3Dcubes_p64.npz")
+        # data_path = os.path.join(self.data_dir, "Methodist_3Dcubes_p32.npz")
         if os.path.exists(data_path) and not reload:
             self.data = np.load(data_path, allow_pickle=True)
             self.X, self.y = self.data["x"], self.data["y"]

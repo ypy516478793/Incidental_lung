@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 
-cd ../classifier
-export PYTHONPATH=../:$PYTHONPATH
+cd ../
+export PYTHONPATH=$(pwd)
 echo python path is ${PYTHONPATH}
 
 GPU=0,1,2,3,4,5,6,7
 
-python classify.py --gpu=${GPU} -d luna --save_dir results/release_luna/ --train True -b 16
+python classifier/classify.py --gpu=${GPU} -d luna --save_dir classifier/results/release_luna/ --train True -b 16
 
 #for ((splitId=0; splitId<${KFOLD}; splitId+=1))
 #do

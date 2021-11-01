@@ -42,10 +42,10 @@ def test(model_dir, model_name, kfold=5):
     all_label = labels_test
     all_pred = np.array(probs_test > 0.5).astype(np.int)
 
-    # all_label = 1 - all_label
-    # all_pred = 1 - all_pred
-    # labels_test = 1 - labels_test
-    # probs_test = 1 - probs_test
+    all_label = 1 - all_label
+    all_pred = 1 - all_pred
+    labels_test = 1 - labels_test
+    probs_test = 1 - probs_test
 
 
 
