@@ -25,12 +25,13 @@ def prepare_cubes(data_dir, size, all_label_path=None):
                 if f.endswith(suffix):
                     data_ls.append(os.path.join(data_dir, folder, f))
 
+    include, exclude1, exclude2 = [], [], []
     for data_path in tqdm(data_ls):
         # name = "/".join(data_path.rstrip("_clean.npz").rsplit("/", 2)[1:])
 
-        image = np.load(data_path, allow_pickle=True)["image"]
-        if len(image) == 1 and len(image.shape) == 4:
-            image = image[0]
+        # image = np.load(data_path, allow_pickle=True)["image"]
+        # if len(image) == 1 and len(image.shape) == 4:
+        #     image = image[0]
 
         dirname = os.path.dirname(data_path)
         filename = os.path.basename(data_path).rstrip("_clean.npz")
@@ -51,20 +52,26 @@ def prepare_cubes(data_dir, size, all_label_path=None):
 
         # More than one nodule and the patient-level label is malignant
         if malignancy == 1 and len(label) > 1:
+            exclude1.append(filename)
             continue
 
         for i, pos in enumerate(label):
             if pos[-1] > max_nodule_size:
+                exclude2.append(filename)
                 continue # Not include this nodule if it is larger than the max_nodule_size
-            cube = extract_cube(image, pos, size=size)
-            x.append(cube)
+            # cube = extract_cube(image, pos, size=size)
+            # x.append(cube)
             y.append(malignancy)
+            include.append(filename)
 
+    print("Include: \n", list(set(include)))
+    print("Exclude (multi-malignant): \n", exclude1)
+    print("Exclude (size > 60): \n", exclude2)
     x = np.expand_dims(np.stack(x), axis=1)
     y = np.array(y)
 
     save_path = os.path.join(data_dir, "Methodist_3Dcubes_p{:d}.npz".format(size))
-    np.savez_compressed(save_path, x=x, y=y)
+    # np.savez_compressed(save_path, x=x, y=y)
     print("Save nodule cubes to {:s}".format(save_path))
 
 if __name__ == '__main__':
