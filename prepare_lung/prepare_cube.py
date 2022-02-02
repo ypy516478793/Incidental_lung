@@ -3,6 +3,7 @@ from tqdm import tqdm
 
 import pandas as pd
 import numpy as np
+import glob
 import os
 
 def prepare_cubes(data_dir, size, all_label_path=None):
@@ -18,12 +19,13 @@ def prepare_cubes(data_dir, size, all_label_path=None):
     suffix = "_clean.npz" if all_label_path is None else ".npz"
     x, y = [], []
 
-    data_ls = []
-    for folder in os.listdir(data_dir):
-        if os.path.isdir(os.path.join(data_dir, folder)):
-            for f in os.listdir(os.path.join(data_dir, folder)):
-                if f.endswith(suffix):
-                    data_ls.append(os.path.join(data_dir, folder, f))
+    data_ls = data_ls = glob.glob(data_dir + "/*/*"+suffix)
+    # data_ls = []
+    # for folder in os.listdir(data_dir):
+    #     if os.path.isdir(os.path.join(data_dir, folder)):
+    #         for f in os.listdir(os.path.join(data_dir, folder)):
+    #             if f.endswith(suffix):
+    #                 data_ls.append(os.path.join(data_dir, folder, f))
 
     include, exclude1, exclude2 = [], [], []
     for data_path in tqdm(data_ls):
@@ -35,6 +37,7 @@ def prepare_cubes(data_dir, size, all_label_path=None):
 
         dirname = os.path.dirname(data_path)
         filename = os.path.basename(data_path).rstrip("_clean.npz")
+        image = np.load(data_path)["image"][0]  # shape == (z, y, x)
 
         if all_label_path is None:
             label_path = os.path.join(dirname, filename + "_label.npz")
@@ -59,19 +62,19 @@ def prepare_cubes(data_dir, size, all_label_path=None):
             if pos[-1] > max_nodule_size:
                 exclude2.append(filename)
                 continue # Not include this nodule if it is larger than the max_nodule_size
-            # cube = extract_cube(image, pos, size=size)
-            # x.append(cube)
+            cube = extract_cube(image, pos, size=size)
+            x.append(cube)
             y.append(malignancy)
             include.append(filename)
 
-    print("Include: \n", list(set(include)))
-    print("Exclude (multi-malignant): \n", exclude1)
-    print("Exclude (size > 60): \n", exclude2)
+    print("Include: length: {:d}\n".format(len(include)), list(set(include)))
+    print("Exclude (multi-malignant): length: {:d}\n".format(len(exclude1)), exclude1)
+    print("Exclude (size > 60):  length: {:d}\n".format(len(exclude2)), exclude2)
     x = np.expand_dims(np.stack(x), axis=1)
     y = np.array(y)
 
     save_path = os.path.join(data_dir, "Methodist_3Dcubes_p{:d}.npz".format(size))
-    # np.savez_compressed(save_path, x=x, y=y)
+    np.savez_compressed(save_path, x=x, y=y)
     print("Save nodule cubes to {:s}".format(save_path))
 
 if __name__ == '__main__':
@@ -79,8 +82,9 @@ if __name__ == '__main__':
     # label_path = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/Methodist_incidental/data_Ben/resampled/pos_labels_norm.csv"
     # data_dir = "/home/cougarnet.uh.edu/pyuan2/Projects/DeepLung-3D_Lung_Nodule_Detection/Methodist_incidental/data_Ben/masked"
     # data_dir = "/home/cougarnet.uh.edu/pyuan2/Projects/DeepLung-3D_Lung_Nodule_Detection/Methodist_incidental/data_Ben/modeNorm3"
-    data_dir = "/home/cougarnet.uh.edu/pyuan2/Projects/DeepLung-3D_Lung_Nodule_Detection/Methodist_incidental/data_Ben/preprocessed"
+    # data_dir = "/home/cougarnet.uh.edu/pyuan2/Projects/DeepLung-3D_Lung_Nodule_Detection/Methodist_incidental/data_Ben/preprocessed"
+    data_dir = "/home/cougarnet.uh.edu/pyuan2/Projects/DeepLung-3D_Lung_Nodule_Detection/Methodist_incidental/data_Ben/preprocessed_data_v1"
     label_path = None
-    size = 32
+    size = 64
     max_nodule_size = 60
     prepare_cubes(data_dir, size, all_label_path=label_path)

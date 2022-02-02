@@ -11,103 +11,6 @@ import torch
 
 import os
 
-
-class IncidentalConfig(object):
-    LOAD_ALL = False
-    CROP_LUNG = True
-    MASK_LUNG = True
-    PET_CT = None
-    # ROOT_DIR = "/home/cougarnet.uh.edu/pyuan2/Datasets/Methodist_incidental/data_kim/"
-    # ROOT_DIR = "/home/cougarnet.uh.edu/pyuan2/Datasets/Methodist_incidental/data_Ben/"
-    # ROOT_DIR = "/home/cougarnet.uh.edu/pyuan2/Datasets/Methodist_incidental/data_unlabeled/"
-    # ROOT_DIR = "/home/cougarnet.uh.edu/pyuan2/Projects/DeepLung-3D_Lung_Nodule_Detection/Methodist_incidental/data_Ben"
-    # DATA_DIR = "/home/cougarnet.uh.edu/pyuan2/Projects/DeepLung-3D_Lung_Nodule_Detection/Methodist_incidental/data_Ben/maskCropDebug"
-    # DATA_DIR = "/home/cougarnet.uh.edu/pyuan2/Projects/DeepLung-3D_Lung_Nodule_Detection/Methodist_incidental/data_unlabeled/masked_with_crop"
-    # DATA_DIR = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/data/"
-    # DATA_DIR = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/data_king/labeled/"
-    # DATA_DIR = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/data_king/unlabeled/"
-    # DATA_DIR = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/data/raw_data/unlabeled/"
-    # DATA_DIR = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/data_mamta/processed_data/unlabeled/"
-    # INFO_FILE = "CTinfo.npz"
-    # POS_LABEL_FILE = "pos_labels_norm.csv"
-    # POS_LABEL_FILE = "pos_labels_norm.csv"
-    # POS_LABEL_FILE = "gt_labels_checklist.xlsx"
-    # POS_LABEL_FILE = "Predicted_labels_checklist_Kim_TC.xlsx"
-    # POS_LABEL_FILE = None
-    # CAT_LABEL_FILE = None
-
-    DATA_DIR = "./Methodist_incidental/data_Ben/modeNorm/"
-    # DATA_DIR = "./Methodist_incidental/data_Ben/resampled/"
-    POS_LABEL_FILE = "./Methodist_incidental/data_Ben/resampled/pos_labels_norm.csv"
-    CAT_LABEL_FILE = "./Methodist_incidental/Lung Nodule Clinical Data_Min Kim - Added Variables 10-2-2020.xlsx"
-    # CAT_LABEL_FILE = None
-
-    BLACK_LIST = ["001030196-20121205", "005520101-20130316", "009453325-20130820", "034276428-20131212",
-                  "036568905-20150714", "038654273-20160324", "011389806-20160907", "015995871-20160929",
-                  "052393550-20161208", "033204314-20170207", "017478009-20170616", "027456904-20180209",
-                  "041293960-20170227", "000033167-20131213", "022528020-20180525", "025432105-20180730",
-                  "000361956-20180625"]
-    LOAD_CLINICAL = False
-
-    CUBE_SIZE = 64
-
-    ANCHORS = [10.0, 30.0, 60.0]
-    MAX_NODULE_SIZE = 60
-    # ANCHORS = [5., 10., 20.]  # [ 10.0, 30.0, 60.]
-    CHANNEL = 1
-    CROP_SIZE = [96, 96, 96]
-    STRIDE = 4
-    MAX_STRIDE = 16
-    NUM_NEG = 800
-    TH_NEG = 0.02
-    TH_POS_TRAIN = 0.5
-    TH_POS_VAL = 1
-    NUM_HARD = 2
-    BOUND_SIZE = 12
-    RESO = 1
-    SIZE_LIM = 2.5  # 3 #6. #mm
-    SIZE_LIM2 = 10  # 30
-    SIZE_LIM3 = 20  # 40
-    AUG_SCALE = True
-    R_RAND_CROP = 0.3
-    PAD_VALUE = 0   # previous 170
-    # AUGTYPE = {"flip": False, "swap": False, "scale": False, "rotate": False, "contrast": False, "bright": False, "sharp": False, "splice": False}
-    # AUGTYPE = {"flip": True, "swap": True, "scale": True, "rotate": True}
-
-    KFOLD = None
-    KFOLD_SEED = None
-
-    FLIP = False
-    SWAP = False
-    SCALE = False
-    ROTATE = False
-    CONSTRAST = False
-    BRIGHT = False
-    SHARP = False
-    SPLICE = False
-
-
-
-    CONF_TH = 4
-    NMS_TH = 0.3
-    DETECT_TH = 0.5
-
-    SIDE_LEN = 144
-    MARGIN = 32
-
-    ORIGIN_SCALE = False
-    SPLIT_SEED = 42
-    LIMIT_TRAIN = None
-    SPLIT_ID = None
-
-    def display(self):
-        """Display Configuration values."""
-        print("\nConfigurations:")
-        for a in dir(self):
-            if not a.startswith("__") and not callable(getattr(self, a)):
-                print("{:30} {}".format(a, getattr(self, a)))
-        print("\n")
-
 class Base(Dataset):
     def __init__(self, images, labels, transform=None):
         self.images = images
@@ -129,7 +32,7 @@ class Base(Dataset):
 
 
 
-class LungDataset(object):
+class MethodistFull(object):
     # def __init__(self, rootFolder, pos_label_file=None, cat_label_file=None, cube_size=64,
     #              train=None, screen=True, clinical=False):
     # def __init__(self, root_dir, POS_LABEL_FILE, CAT_LABEL_FILE, config, subset="train"):
@@ -157,7 +60,7 @@ class LungDataset(object):
         # self.__remove_duplicate__()
         # self.__check_labels__()
         # self.__screen__()
-        self.load_data()
+        self.load_data(cube_size=config.CUBE_SIZE)
 
     def get_datasets(self, kfold=None, splitId=None, loadAll=False, test_size=0.1):
         if loadAll:
@@ -259,9 +162,9 @@ class LungDataset(object):
     #     print("Shape of test_x is: ", X_test.shape)
     #     print("Shape of test_y is: ", y_test.shape)
 
-    def load_data(self, reload=False):
+    def load_data(self, reload=False, cube_size=64):
         # data_path = os.path.join(self.data_dir, "3D_incidental_lung_multiNeg.npz")
-        data_path = os.path.join(self.data_dir, "Methodist_3Dcubes_p64.npz")
+        data_path = os.path.join(self.data_dir, "Methodist_3Dcubes_p{:d}.npz".format(cube_size))
         # data_path = os.path.join(self.data_dir, "Methodist_3Dcubes_p32.npz")
         if os.path.exists(data_path) and not reload:
             self.data = np.load(data_path, allow_pickle=True)
@@ -291,30 +194,30 @@ class LungDataset(object):
         np.savez_compressed(data_path, x=self.X, y=self.y)
         print("Save slice 3D incidental lung nodule data to {:s}".format(data_path))
 
-    def __remove_duplicate__(self):
-        for i, info in enumerate(self.imageInfo):
-            if info["date"] == "":
-                info["date"] = info["imagePath"].strip(".npz").split("-")[-1]
+    # def __remove_duplicate__(self):
+    #     for i, info in enumerate(self.imageInfo):
+    #         if info["date"] == "":
+    #             info["date"] = info["imagePath"].strip(".npz").split("-")[-1]
+    #
+    #     identifier_set = ["{:}-{:}".format(info["patientID"], info["date"]) for info in self.imageInfo]
+    #     remove_ids = []
+    #     from collections import Counter
+    #     cnt = Counter(identifier_set)
+    #     for k, v in cnt.items():
+    #         if k in self.config.BLACK_LIST:
+    #             indices = [i for i, x in enumerate(identifier_set) if x == k]
+    #             remove_ids = remove_ids + indices
+    #         elif v > 1:
+    #             indices = [i for i, x in enumerate(identifier_set) if x == k]
+    #             remove_ids = remove_ids + indices[:-1]
+    #     self.imageInfo = np.delete(self.imageInfo, remove_ids)
 
-        identifier_set = ["{:}-{:}".format(info["patientID"], info["date"]) for info in self.imageInfo]
-        remove_ids = []
-        from collections import Counter
-        cnt = Counter(identifier_set)
-        for k, v in cnt.items():
-            if k in self.config.BLACK_LIST:
-                indices = [i for i, x in enumerate(identifier_set) if x == k]
-                remove_ids = remove_ids + indices
-            elif v > 1:
-                indices = [i for i, x in enumerate(identifier_set) if x == k]
-                remove_ids = remove_ids + indices[:-1]
-        self.imageInfo = np.delete(self.imageInfo, remove_ids)
-
-    def __check_labels__(self):
-        for info in tqdm(self.imageInfo):
-            pstr = info["pstr"]
-            dstr = info["date"]
-            existId = (self.pos_df["patient"] == pstr) & (self.pos_df["date"] == dstr)
-            assert existId.sum() > 0, "no matches, pstr {:}, dstr {:}".format(pstr, dstr)
+    # def __check_labels__(self):
+    #     for info in tqdm(self.imageInfo):
+    #         pstr = info["pstr"]
+    #         dstr = info["date"]
+    #         existId = (self.pos_df["patient"] == pstr) & (self.pos_df["date"] == dstr)
+    #         assert existId.sum() > 0, "no matches, pstr {:}, dstr {:}".format(pstr, dstr)
 
     # def load_subset(self, subset, random_state=None, limit_train_size=None, kfold=None, splitId=None):
     #     if subset == "inference":
@@ -358,16 +261,16 @@ class LungDataset(object):
     # def imageIds(self):
     #     return self._imageIds
 
-    def __screen__(self):
-        num_images = len(self.imageInfo)
-        mask = np.ones(num_images, dtype=bool)
-        for imageId in range(num_images):
-            pos = self.load_pos(imageId)
-            cat = self.load_cat(imageId)
-            # if len(pos) > 1:
-            if len(pos) > 1 and cat == 0:
-                mask[imageId] = False
-        self.imageInfo = self.imageInfo[mask]
+    # def __screen__(self):
+    #     num_images = len(self.imageInfo)
+    #     mask = np.ones(num_images, dtype=bool)
+    #     for imageId in range(num_images):
+    #         pos = self.load_pos(imageId)
+    #         cat = self.load_cat(imageId)
+    #         # if len(pos) > 1:
+    #         if len(pos) > 1 and cat == 0:
+    #             mask[imageId] = False
+    #     self.imageInfo = self.imageInfo[mask]
 
     def clinical_preprocessing(self):
         dropCols = ["Sex"]

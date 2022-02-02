@@ -7,17 +7,30 @@ echo python path is ${PYTHONPATH}
 KFOLD=10
 GPU=0,1,2,3
 
-# 10 fold Training and testing
+## 10 fold Training and testing
+#for ((splitId=0; splitId<${KFOLD}; splitId+=1))
+#do
+#    echo "Start to run kfold splitId ${splitId}"
+#    python classifier/classify.py --gpu ${GPU} -d methodist --kfold ${KFOLD} --splitId ${splitId} \
+#        --save_dir classifier/results/release_methodist/min_max_load_luna_cube32/${KFOLD}fold --train True -b 16 -ts=0.1 \
+#        -p ./Methodist_incidental/data_Ben/preprocessed/ -lm classifier/results/release_luna/res18/epoch_7.pt
+#done
+## Evaluation
+#python classifier/evaluate_kfold.py --kfold=${KFOLD} \
+#    --save_dir=classifier/results/release_methodist/min_max_load_luna_cube32/${KFOLD}fold
+
+
+# 10 fold Training and testing new lung mask
 for ((splitId=0; splitId<${KFOLD}; splitId+=1))
 do
     echo "Start to run kfold splitId ${splitId}"
-    python classifier/classify.py --gpu ${GPU} -d methodist --kfold ${KFOLD} --splitId ${splitId} \
-        --save_dir classifier/results/release_methodist/min_max_load_luna_cube32/${KFOLD}fold --train True -b 16 -ts=0.1 \
-        -p ./Methodist_incidental/data_Ben/preprocessed/ -lm classifier/results/release_luna/res18/epoch_7.pt
+    python classifier/classify.py --gpu ${GPU} -d methBenMinmaxNew --kfold ${KFOLD} --splitId ${splitId} \
+        --save_dir classifier/results/release_methodist/min_max_load_luna_newMask_cube32/${KFOLD}fold --train True -b 16 -ts=0.1 \
+        -lm classifier/results/release_luna/res18/epoch_7.pt
 done
 # Evaluation
 python classifier/evaluate_kfold.py --kfold=${KFOLD} \
-    --save_dir=classifier/results/release_methodist/min_max_load_luna_cube32/${KFOLD}fold
+    --save_dir=classifier/results/release_methodist/min_max_load_luna_newMask_cube32/${KFOLD}fold
 
 
 ### Learning curve by varying test size

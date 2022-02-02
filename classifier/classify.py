@@ -11,6 +11,7 @@ from utils.summary_utils import Logger
 from utils.data_utils import augment
 from datetime import datetime
 from classifier.resnet import generate_model
+from dataLoader import getDataset
 # from classifier.resnet_rfs import ResNet_RFS
 # from classifier.resnet_mb import ResNet_MB
 
@@ -23,8 +24,7 @@ import os
 import argparse
 
 parser = argparse.ArgumentParser(description="Incidental lung nodule classification")
-parser.add_argument("-d", "--datasource", type=str, default="methodist", help="Dataset used for training/test",
-                    choices=["luna", "lunaRaw", "methoidstPilot", "methodist", "additional"])
+parser.add_argument("-d", "--datasource", type=str, default="methodist", help="Dataset used for training/test",)
 parser.add_argument("-p", "--data_dir", type=str, help="Data directory", default=None)
 parser.add_argument("-s", "--save_dir", type=str, help="Save directory")
 parser.add_argument("-g", "--gpu", type=str, default="0,1,2,3", help="Which gpus to use")
@@ -479,77 +479,94 @@ def main():
 
 
     ## ----- Create datasets and dataLoaders ----- ##
-    if datasource == "methodist":
-        from dataLoader.IncidentalData import LungDataset, IncidentalConfig
-        from utils.model_utils import collate
-
-        config = IncidentalConfig()
-        config = merge_args(config, args)
-        lungData = LungDataset(config)
-        kfold = StratifiedKFold(n_splits=args.kfold, random_state=42) if kfold is not None else None
-        # kfold = Kfold(n_splits=args.kfold, random_state=42) if kfold is not None else None
-        datasets = lungData.get_datasets(kfold=kfold, splitId=splitId, loadAll=config.LOAD_ALL, test_size=test_size)
-        # kfold = len(lungData.y) if kfold is None else args.kfold
-        # kfold = KFold(n_splits=kfold, random_state=42)
-
-        # trainLoader = DataLoader(datasets["train"], batch_size=batch_size, shuffle=True, collate_fn=collate)
-        trainLoader = DataLoader(datasets["train"], batch_size=batch_size, shuffle=True, num_workers=workers)
-        if kfold is not None:
-            trainValLoader = DataLoader(datasets["train_val"], batch_size=batch_size, shuffle=True, num_workers=workers)
-        else:
-            trainValLoader = None
-        valLoader = DataLoader(datasets["val"], batch_size=batch_size, shuffle=False, num_workers=workers)
-        testLoader = DataLoader(datasets["test"], batch_size=batch_size, shuffle=False, num_workers=workers)
-
-        # trainData = LungDataset(config, "train", kfold=kfold, splitId=splitId)
-        # trainLoader = DataLoader(trainData, batch_size=batch_size, shuffle=True, collate_fn=collate)
-        # valData = LungDataset(config, "val", kfold=kfold, splitId=splitId)
-        # valLoader = DataLoader(valData, batch_size=batch_size, shuffle=False)
-
-
-        # pos_label_file = "/data/pyuan2/Methodist_incidental/data_Ben/labeled/pos_labels_norm.csv"
-        # cat_label_file = "../data/Lung Nodule Clinical Data_Min Kim - Added Variables 10-2-2020.xlsx"
-        # load_model = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/classifier/model/classification_LUNA16/Resnet18_Adam_lr0.001"
-        # load_model = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/classifier/model/kim_labeled_198/Resnet18_"
-
-        # trainData = LungDataset(root_dir, pos_label_file=args.pos_label_path, cat_label_file=args.cat_label_path,
-        #                        cube_size=cube_size, train=True, screen=True, clinical=clinical)
-        # trainData = LUNA16(train=True)
-
-
-        # valData = LungDataset(root_dir, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
-        #                       cube_size=cube_size, train=False, screen=True, clinical=clinical)
-        # valData = LUNA16(train=False)
-        # valLoader = DataLoader(valData, batch_size=1, shuffle=False)
+    config, Dataset = getDataset(args)
+    config = merge_args(config, args)
+    lungData = Dataset(config)
+    kfold = StratifiedKFold(n_splits=args.kfold, random_state=42) if kfold is not None else None
+    datasets = lungData.get_datasets(kfold=kfold, splitId=splitId, loadAll=config.LOAD_ALL, test_size=test_size)
+    # kfold = len(lungData.y) if kfold is None else args.kfold
+    # kfold = KFold(n_splits=kfold, random_state=42)
+    # trainLoader = DataLoader(datasets["train"], batch_size=batch_size, shuffle=True, collate_fn=collate)
+    trainLoader = DataLoader(datasets["train"], batch_size=batch_size, shuffle=True, num_workers=workers)
+    if kfold is not None:
+        trainValLoader = DataLoader(datasets["train_val"], batch_size=batch_size, shuffle=True, num_workers=workers)
     else:
-        assert datasource == "luna"
-        # from dataLoader.LUNA16Data import LUNA16, LunaConfig
-        from dataLoader.LunaData import LunaDataset, LunaConfig
+        trainValLoader = None
+    valLoader = DataLoader(datasets["val"], batch_size=batch_size, shuffle=False, num_workers=workers)
+    testLoader = DataLoader(datasets["test"], batch_size=batch_size, shuffle=False, num_workers=workers)
 
-        config = LunaConfig()
-        config = merge_args(config, args)
-        lunaData = LunaDataset(config)
-        kfold = StratifiedKFold(n_splits=args.kfold, random_state=42) if kfold is not None else None
-        datasets = lunaData.get_datasets(kfold=kfold, splitId=splitId, loadAll=config.LOAD_ALL, test_size=test_size)
-        # kfold = len(lungData.y) if kfold is None else args.kfold
-        # kfold = KFold(n_splits=kfold, random_state=42)
-        # trainLoader = DataLoader(datasets["train"], batch_size=batch_size, shuffle=True, collate_fn=collate)
-        trainLoader = DataLoader(datasets["train"], batch_size=batch_size, shuffle=True, num_workers=workers)
-        if kfold is not None:
-            trainValLoader = DataLoader(datasets["train_val"], batch_size=batch_size, shuffle=True, num_workers=workers)
-        else:
-            trainValLoader = None
-        valLoader = DataLoader(datasets["val"], batch_size=batch_size, shuffle=False, num_workers=workers)
-        testLoader = DataLoader(datasets["test"], batch_size=batch_size, shuffle=False, num_workers=workers)
-        # root_dir = "../data/"
-        # pos_label_file = "../data/pos_labels.csv"
-        # cat_label_file = "../data/Lung Nodule Clinical Data_Min Kim (No name).xlsx"
-        # load_model = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/classifier/model/classification_LUNA16/Resnet18_Adam_lr0.001"
-        # cube_size = 48
-        # trainData = LUNA16(train=True)
-        # trainLoader = DataLoader(trainData, batch_size=2, shuffle=True)
-        # valData = LUNA16(train=False)
-        # valLoader = DataLoader(valData, batch_size=1, shuffle=False)
+    # # if datasource == "methodist":
+    # if "meth" in datasource:
+    #     # from dataLoader.IncidentalData import LungDataset, IncidentalConfig
+    #     from utils.model_utils import collate
+    #
+    #     # config = IncidentalConfig()
+    #     config = merge_args(config, args)
+    #     lungData = Dataset(config)
+    #     kfold = StratifiedKFold(n_splits=args.kfold, random_state=42) if kfold is not None else None
+    #     # kfold = Kfold(n_splits=args.kfold, random_state=42) if kfold is not None else None
+    #     datasets = lungData.get_datasets(kfold=kfold, splitId=splitId, loadAll=config.LOAD_ALL, test_size=test_size)
+    #     # kfold = len(lungData.y) if kfold is None else args.kfold
+    #     # kfold = KFold(n_splits=kfold, random_state=42)
+    #
+    #     # trainLoader = DataLoader(datasets["train"], batch_size=batch_size, shuffle=True, collate_fn=collate)
+    #     trainLoader = DataLoader(datasets["train"], batch_size=batch_size, shuffle=True, num_workers=workers)
+    #     if kfold is not None:
+    #         trainValLoader = DataLoader(datasets["train_val"], batch_size=batch_size, shuffle=True, num_workers=workers)
+    #     else:
+    #         trainValLoader = None
+    #     valLoader = DataLoader(datasets["val"], batch_size=batch_size, shuffle=False, num_workers=workers)
+    #     testLoader = DataLoader(datasets["test"], batch_size=batch_size, shuffle=False, num_workers=workers)
+    #
+    #     # trainData = LungDataset(config, "train", kfold=kfold, splitId=splitId)
+    #     # trainLoader = DataLoader(trainData, batch_size=batch_size, shuffle=True, collate_fn=collate)
+    #     # valData = LungDataset(config, "val", kfold=kfold, splitId=splitId)
+    #     # valLoader = DataLoader(valData, batch_size=batch_size, shuffle=False)
+    #
+    #
+    #     # pos_label_file = "/data/pyuan2/Methodist_incidental/data_Ben/labeled/pos_labels_norm.csv"
+    #     # cat_label_file = "../data/Lung Nodule Clinical Data_Min Kim - Added Variables 10-2-2020.xlsx"
+    #     # load_model = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/classifier/model/classification_LUNA16/Resnet18_Adam_lr0.001"
+    #     # load_model = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/classifier/model/kim_labeled_198/Resnet18_"
+    #
+    #     # trainData = LungDataset(root_dir, pos_label_file=args.pos_label_path, cat_label_file=args.cat_label_path,
+    #     #                        cube_size=cube_size, train=True, screen=True, clinical=clinical)
+    #     # trainData = LUNA16(train=True)
+    #
+    #
+    #     # valData = LungDataset(root_dir, pos_label_file=pos_label_file, cat_label_file=cat_label_file,
+    #     #                       cube_size=cube_size, train=False, screen=True, clinical=clinical)
+    #     # valData = LUNA16(train=False)
+    #     # valLoader = DataLoader(valData, batch_size=1, shuffle=False)
+    # else:
+    #     assert datasource == "luna"
+    #     # from dataLoader.LUNA16Data import LUNA16, LunaConfig
+    #     from dataLoader.LunaData import LunaDataset, LunaConfig
+    #
+    #     # config = LunaConfig()
+    #     config = merge_args(config, args)
+    #     lunaData = Dataset(config)
+    #     kfold = StratifiedKFold(n_splits=args.kfold, random_state=42) if kfold is not None else None
+    #     datasets = lunaData.get_datasets(kfold=kfold, splitId=splitId, loadAll=config.LOAD_ALL, test_size=test_size)
+    #     # kfold = len(lungData.y) if kfold is None else args.kfold
+    #     # kfold = KFold(n_splits=kfold, random_state=42)
+    #     # trainLoader = DataLoader(datasets["train"], batch_size=batch_size, shuffle=True, collate_fn=collate)
+    #     trainLoader = DataLoader(datasets["train"], batch_size=batch_size, shuffle=True, num_workers=workers)
+    #     if kfold is not None:
+    #         trainValLoader = DataLoader(datasets["train_val"], batch_size=batch_size, shuffle=True, num_workers=workers)
+    #     else:
+    #         trainValLoader = None
+    #     valLoader = DataLoader(datasets["val"], batch_size=batch_size, shuffle=False, num_workers=workers)
+    #     testLoader = DataLoader(datasets["test"], batch_size=batch_size, shuffle=False, num_workers=workers)
+    #     # root_dir = "../data/"
+    #     # pos_label_file = "../data/pos_labels.csv"
+    #     # cat_label_file = "../data/Lung Nodule Clinical Data_Min Kim (No name).xlsx"
+    #     # load_model = "/home/cougarnet.uh.edu/pyuan2/Projects/Incidental_Lung/classifier/model/classification_LUNA16/Resnet18_Adam_lr0.001"
+    #     # cube_size = 48
+    #     # trainData = LUNA16(train=True)
+    #     # trainLoader = DataLoader(trainData, batch_size=2, shuffle=True)
+    #     # valData = LUNA16(train=False)
+    #     # valLoader = DataLoader(valData, batch_size=1, shuffle=False)
 
     print("Shape of train_x is: ", (len(datasets["train"]), 1,) + (config.CUBE_SIZE,) * 3)
     print("Shape of train_y is: ", (len(datasets["train"]),))
